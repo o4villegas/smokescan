@@ -1,0 +1,8 @@
+{
+  "model": "claude-opus-4-5-20251101",
+  "thinkingEnabled": true,
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "hooks": [
+    {
+      "event": "PostToolUse",
+      "matcher": {
+        "tool_name": ["Write", "Edit"]
+      },
+      "command": "npm run lint -- --fix 2>/dev/null || true"
+    },
+    {
+      "event": "Stop",
+      "command": "echo '\\n[SmokeScan] Session complete. Remember: npm run check before committing.\\n'"
+    }
+  ]
+}

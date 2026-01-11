@@ -11,5 +11,34 @@
 	"assets": {
 		"directory": "./dist/client",
 		"not_found_handling": "single-page-application"
+	},
+	"vars": {
+		"RUNPOD_VISION_ENDPOINT_ID": "229s1ijblrhdru"
+	},
+	"kv_namespaces": [
+		{
+			"binding": "SMOKESCAN_SESSIONS",
+			"id": "placeholder-create-in-dashboard"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "SMOKESCAN_DB",
+			"database_name": "smokescan-db",
+			"database_id": "ab6e2ef1-e6d4-47ce-b8d8-9300614e80e0"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "SMOKESCAN_IMAGES",
+			"bucket_name": "smokescan-images"
+		},
+		{
+			"binding": "SMOKESCAN_REPORTS",
+			"bucket_name": "smokescan-reports"
+		}
+	],
+	"ai": {
+		"binding": "AI"
 	}
 }
