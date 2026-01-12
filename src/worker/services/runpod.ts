@@ -83,30 +83,25 @@ ${metadata.notes ? `Additional notes: ${metadata.notes}` : ''}
 Provide your structured damage assessment as JSON.`;
 
     // Build message with images
-    const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+    const content: Array<{ type: string; text?: string; image?: string }> = [
       { type: 'text', text: userPrompt },
     ];
 
     for (const image of images) {
       const imageUrl = image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
       content.push({
-        type: 'image_url',
-        image_url: { url: imageUrl },
+        type: 'image',
+        image: imageUrl,
       });
     }
 
     const requestBody = {
       input: {
-        openai_route: '/v1/chat/completions',
-        openai_input: {
-          model: 'Qwen/Qwen3-VL-30B-A3B-Thinking',
-          messages: [
-            { role: 'system', content: PHASE1_SYSTEM_PROMPT },
-            { role: 'user', content },
-          ],
-          max_tokens: 2000,
-          temperature: 0.1, // Low temperature for consistent structured output
-        },
+        messages: [
+          { role: 'system', content: PHASE1_SYSTEM_PROMPT },
+          { role: 'user', content },
+        ],
+        max_tokens: 2000,
       },
     };
 
@@ -117,10 +112,8 @@ Provide your structured damage assessment as JSON.`;
 
     // Parse the LLM response
     try {
-      const responseData = result.data as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const content = responseData.choices?.[0]?.message?.content;
+      const responseData = result.data as { output?: string };
+      const content = responseData.output;
 
       if (!content) {
         return {
@@ -201,7 +194,7 @@ ${ragContext}
 Please generate a complete, professional assessment report.`;
 
     // Include images for visual reference in synthesis
-    const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+    const content: Array<{ type: string; text?: string; image?: string }> = [
       { type: 'text', text: userPrompt },
     ];
 
@@ -209,23 +202,18 @@ Please generate a complete, professional assessment report.`;
     for (const image of images.slice(0, 3)) {
       const imageUrl = image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
       content.push({
-        type: 'image_url',
-        image_url: { url: imageUrl },
+        type: 'image',
+        image: imageUrl,
       });
     }
 
     const requestBody = {
       input: {
-        openai_route: '/v1/chat/completions',
-        openai_input: {
-          model: 'Qwen/Qwen3-VL-30B-A3B-Thinking',
-          messages: [
-            { role: 'system', content: PHASE3_SYSTEM_PROMPT },
-            { role: 'user', content },
-          ],
-          max_tokens: 4000,
-          temperature: 0.3,
-        },
+        messages: [
+          { role: 'system', content: PHASE3_SYSTEM_PROMPT },
+          { role: 'user', content },
+        ],
+        max_tokens: 4000,
       },
     };
 
@@ -234,10 +222,8 @@ Please generate a complete, professional assessment report.`;
       return result;
     }
 
-    const responseData = result.data as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const reportContent = responseData.choices?.[0]?.message?.content;
+    const responseData = result.data as { output?: string };
+    const reportContent = responseData.output;
 
     if (!reportContent) {
       return {
@@ -265,16 +251,11 @@ Answer questions clearly and professionally. Reference specific findings from th
 
     const requestBody = {
       input: {
-        openai_route: '/v1/chat/completions',
-        openai_input: {
-          model: 'Qwen/Qwen3-VL-30B-A3B-Thinking',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...conversationHistory,
-          ],
-          max_tokens: 2000,
-          temperature: 0.5,
-        },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...conversationHistory,
+        ],
+        max_tokens: 2000,
       },
     };
 
@@ -283,10 +264,8 @@ Answer questions clearly and professionally. Reference specific findings from th
       return result;
     }
 
-    const responseData = result.data as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const response = responseData.choices?.[0]?.message?.content;
+    const responseData = result.data as { output?: string };
+    const response = responseData.output;
 
     if (!response) {
       return {

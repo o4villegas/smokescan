@@ -4,7 +4,7 @@ Custom RunPod serverless handler for Qwen3-VL vision model using Transformers.
 
 ## Why Custom Handler?
 
-RunPod's pre-built vLLM templates don't support the latest `qwen3_vl_moe` architecture. This handler uses Transformers directly for maximum compatibility.
+RunPod's pre-built vLLM templates don't support the latest Qwen3-VL architecture. This handler uses Transformers directly with `AutoModelForVision2Seq` for maximum compatibility.
 
 ## Files
 
@@ -32,7 +32,7 @@ RunPod's pre-built vLLM templates don't support the latest `qwen3_vl_moe` archit
 
 ## API Format
 
-Request (OpenAI-compatible):
+Request:
 ```json
 {
   "input": {
@@ -40,13 +40,10 @@ Request (OpenAI-compatible):
       {"role": "system", "content": "You are a fire damage assessment expert."},
       {"role": "user", "content": [
         {"type": "text", "text": "Analyze this fire damage image."},
-        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}
+        {"type": "image", "image": "data:image/jpeg;base64,..."}
       ]}
     ],
-    "sampling_params": {
-      "max_tokens": 2000,
-      "temperature": 0.1
-    }
+    "max_tokens": 2000
   }
 }
 ```
@@ -54,17 +51,13 @@ Request (OpenAI-compatible):
 Response:
 ```json
 {
-  "choices": [{
-    "message": {
-      "role": "assistant",
-      "content": "Based on the image analysis..."
-    },
-    "finish_reason": "stop"
-  }],
-  "usage": {
-    "prompt_tokens": 150,
-    "completion_tokens": 500,
-    "total_tokens": 650
-  }
+  "output": "Based on the image analysis..."
 }
 ```
+
+## Image Formats Supported
+
+The processor accepts multiple image formats:
+- `data:image/jpeg;base64,...` (base64 data URL)
+- `https://example.com/image.jpg` (HTTP URL)
+- Local file paths
