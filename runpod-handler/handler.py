@@ -103,10 +103,10 @@ def handler(job):
             content = msg.get("content", "")
 
             if isinstance(content, str):
-                # Simple text message - pass through
+                # Simple text message - convert to list format for Qwen3-VL processor
                 processed_messages.append({
                     "role": role,
-                    "content": content
+                    "content": [{"type": "text", "text": content}]
                 })
             elif isinstance(content, list):
                 # Multimodal message with text and images
