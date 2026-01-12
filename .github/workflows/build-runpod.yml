@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOCKER_IMAGE: lando555/smokescan-vision
+  DOCKER_IMAGE: gvo555/smokescan-vision
 
 jobs:
   build-and-push:
