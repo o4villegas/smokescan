@@ -4,40 +4,72 @@ Based on official HuggingFace example:
 https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking
 """
 import runpod
+import os
+import sys
 import traceback
 
-model = None
-processor = None
+# === DIAGNOSTIC: Print versions to help debug import issues ===
+print("SmokeScan Vision Handler - Starting initialization...")
+print(f"Python version: {sys.version}")
 
+import transformers
+print(f"Transformers version: {transformers.__version__}")
 
-def load_model():
-    """Load model using official HuggingFace pattern."""
-    global model, processor
+# === MODEL LOADING - BEFORE serverless.start() ===
+# Per RunPod docs: "You will want models to be loaded into memory before starting serverless"
+print("Importing model classes...")
 
-    if model is not None:
-        print("Model already loaded (warm worker)")
-        return
-
+try:
     from transformers import Qwen3VLMoeForConditionalGeneration, AutoProcessor
+    print("Model classes imported successfully")
+except ImportError as e:
+    print(f"IMPORT ERROR: {e}")
+    print("This usually means transformers version is too old.")
+    print("Qwen3VLMoeForConditionalGeneration requires transformers from git HEAD")
+    print("See: https://github.com/huggingface/transformers/issues/41447")
+    raise
 
-    model_name = "Qwen/Qwen3-VL-30B-A3B-Thinking"
+MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Thinking"
+RUNPOD_CACHE_DIR = "/runpod-volume/huggingface-cache/hub"
 
-    print(f"Loading processor: {model_name}")
-    processor = AutoProcessor.from_pretrained(model_name)
-    print("Processor loaded")
 
-    print(f"Loading model: {model_name}")
-    model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
-        model_name,
-        dtype="auto",
-        device_map="auto"
-    )
-    print("Model loaded successfully")
+def find_cached_model_path(model_name):
+    """Locate cached model using RunPod's cache structure."""
+    cache_name = model_name.replace("/", "--")
+    snapshots_dir = os.path.join(RUNPOD_CACHE_DIR, f"models--{cache_name}", "snapshots")
+
+    if os.path.exists(snapshots_dir):
+        snapshots = os.listdir(snapshots_dir)
+        if snapshots:
+            return os.path.join(snapshots_dir, snapshots[0])
+    return None
+
+
+# Check for RunPod cached model first
+model_path = find_cached_model_path(MODEL_NAME)
+if model_path:
+    print(f"Using RunPod cached model at: {model_path}")
+else:
+    print(f"No RunPod cache found - loading from HuggingFace: {MODEL_NAME}")
+    model_path = MODEL_NAME
+
+print("Loading processor...")
+processor = AutoProcessor.from_pretrained(model_path)
+print("Processor loaded")
+
+print("Loading model (this may take several minutes)...")
+model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+    model_path,
+    dtype="auto",  # Correct for Qwen3-VL (verified from official docs)
+    device_map="auto"
+)
+print("Model loaded successfully!")
 
 
 def handler(job):
     """
     RunPod handler - processes vision/text requests.
+    Model is already loaded in memory.
 
     Input format:
     {
@@ -51,8 +83,6 @@ def handler(job):
     }
     """
     try:
-        load_model()
-
         job_input = job["input"]
         messages = job_input.get("messages", [])
         max_tokens = job_input.get("max_tokens", 128)
@@ -70,7 +100,8 @@ def handler(job):
 
         generated_ids = model.generate(**inputs, max_new_tokens=max_tokens)
         generated_ids_trimmed = [
-            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+            out_ids[len(in_ids):]
+            for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
         output_text = processor.batch_decode(
             generated_ids_trimmed,

@@ -8,12 +8,15 @@ FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV HF_HOME=/runpod-volume/huggingface
-ENV TRANSFORMERS_CACHE=/runpod-volume/huggingface
+# REMOVED: HF_HOME and TRANSFORMERS_CACHE pointing to /runpod-volume/
+# Let HuggingFace use default cache OR RunPod's model caching system
 
-# Install Transformers from source (required for Qwen3VLMoeForConditionalGeneration)
-# Qwen3-VL-MoE requires transformers >= 4.57.0
-RUN pip install --no-cache-dir git+https://github.com/huggingface/transformers.git
+# Uninstall any existing transformers to avoid conflicts
+# Then install from git HEAD (required for Qwen3VLMoeForConditionalGeneration)
+# See: https://github.com/huggingface/transformers/issues/41447
+RUN pip uninstall -y transformers 2>/dev/null || true && \
+    pip install --no-cache-dir --force-reinstall \
+    git+https://github.com/huggingface/transformers.git
 
 # Install other required packages
 RUN pip install --no-cache-dir \
@@ -25,6 +28,9 @@ RUN pip install --no-cache-dir \
     qwen-vl-utils \
     einops \
     tiktoken
+
+# Verify transformers version and model class availability
+RUN python -c "import transformers; print(f'Transformers: {transformers.__version__}'); from transformers import Qwen3VLMoeForConditionalGeneration; print('Model class import OK')"
 
 # Create working directory
 WORKDIR /app
