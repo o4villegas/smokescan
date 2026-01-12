@@ -55,6 +55,10 @@ RUN pip install flash-attn --no-build-isolation || echo "Flash Attention install
 # Create working directory
 WORKDIR /app
 
+# Cache bust - forces fresh copy of handler.py on every build
+ARG CACHE_BUST=20260112_v1
+RUN echo "Build timestamp: $CACHE_BUST"
+
 # Copy handler
 COPY handler.py /app/handler.py
 
