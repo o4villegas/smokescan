@@ -85,15 +85,23 @@ def handler(job):
 
         job_input = job["input"]
 
-        # Extract messages and params
-        messages = job_input.get("messages", [])
-        sampling_params = job_input.get("sampling_params", {})
+        # Support both direct messages and OpenAI-wrapped format
+        # Worker sends: input.openai_input.messages
+        # Direct calls may use: input.messages
+        openai_input = job_input.get("openai_input", {})
+        messages = openai_input.get("messages") or job_input.get("messages", [])
 
         if not messages:
             return {"error": "No messages provided"}
 
-        max_tokens = sampling_params.get("max_tokens", 2000)
-        temperature = sampling_params.get("temperature", 0.7)
+        # Get sampling params from either format
+        if openai_input:
+            max_tokens = openai_input.get("max_tokens", 2000)
+            temperature = openai_input.get("temperature", 0.7)
+        else:
+            sampling_params = job_input.get("sampling_params", {})
+            max_tokens = sampling_params.get("max_tokens", 2000)
+            temperature = sampling_params.get("temperature", 0.7)
 
         # Process messages - convert OpenAI format to Qwen format if needed
         processed_messages = []
