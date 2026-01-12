@@ -43,11 +43,14 @@ def load_model():
     print("Processor loaded")
 
     # Load model - uses auto dtype detection for optimal memory usage
+    # ignore_mismatched_sizes handles potential version mismatches between
+    # transformers and the model checkpoint
     model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
         device_map="auto",
-        trust_remote_code=True
+        trust_remote_code=True,
+        ignore_mismatched_sizes=True
     )
     print(f"Model loaded successfully on device(s): {model.hf_device_map if hasattr(model, 'hf_device_map') else 'auto'}")
 
