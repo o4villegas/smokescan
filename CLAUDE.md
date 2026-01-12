@@ -20,6 +20,7 @@
 | FDAM Methodology | `RAG-KB/FDAM_v4_METHODOLOGY.md` |
 | Qwen3-VL Patterns | https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking |
 | Cloudflare AutoRAG | https://developers.cloudflare.com/ai-search/ |
+| RunPod Serverless API | https://docs.runpod.io/serverless/endpoints/send-requests |
 | Deployment | Git push triggers Cloudflare auto-deploy (NO manual wrangler) |
 | Production URL | https://smokescan.lando555.workers.dev/ |
 | AI Search ID | `smokescan-rag` |
