@@ -3,7 +3,7 @@
  * Handles communication with the Qwen3-VL vision model endpoint
  */
 
-import type { Result, ApiError, VisionAnalysisOutput, AssessmentMetadata } from '../types';
+import type { Result, ApiError, ApiErrorCode, VisionAnalysisOutput, AssessmentMetadata } from '../types';
 import { VisionAnalysisOutputSchema } from '../schemas';
 
 type RunPodConfig = {
@@ -320,7 +320,7 @@ Answer questions clearly and professionally. Reference specific findings from th
         return {
           success: false,
           error: {
-            code: submitResponse.status,
+            code: submitResponse.status as ApiErrorCode,
             message: 'RunPod request failed',
             details: errorText,
           },

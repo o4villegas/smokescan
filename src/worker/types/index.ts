@@ -9,7 +9,7 @@ export type Result<T, E = Error> =
   | { success: false; error: E };
 
 // API Error structure
-export type ApiErrorCode = 400 | 404 | 500 | 504;
+export type ApiErrorCode = 400 | 401 | 403 | 404 | 422 | 500 | 502 | 503 | 504;
 
 export type ApiError = {
   code: ApiErrorCode;
