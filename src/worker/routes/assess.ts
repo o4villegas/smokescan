@@ -1,12 +1,15 @@
 /**
  * Assessment Route Handler
  * POST /api/assess - Submit images for FDAM assessment
+ *
+ * Architecture: Single-call pattern where the Qwen3-VL agent handles RAG internally.
+ * The agent uses tool calling to query Cloudflare AI Search for FDAM methodology.
  */
 
 import type { Context } from 'hono';
-import type { WorkerEnv, AssessmentReport, SessionState } from '../types';
+import type { WorkerEnv, AssessmentReport, SessionState, VisionAnalysisOutput } from '../types';
 import { AssessmentRequestSchema } from '../schemas';
-import { RunPodService, RAGService, SessionService } from '../services';
+import { RunPodService, SessionService } from '../services';
 
 export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
   const startTime = Date.now();
@@ -45,44 +48,25 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
     endpointId: c.env.RUNPOD_VISION_ENDPOINT_ID,
   });
 
-  const rag = new RAGService({ ai: c.env.AI });
   const session = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
 
-  // Phase 1: Vision analysis
-  const visionResult = await runpod.analyzeImages(images, metadata);
-  if (!visionResult.success) {
+  // Single call to agent - it handles RAG internally via tool calling
+  const assessResult = await runpod.assess(images, metadata);
+  if (!assessResult.success) {
     return c.json(
-      { success: false, error: visionResult.error },
-      visionResult.error.code as 400 | 500
-    );
-  }
-
-  const visionAnalysis = visionResult.data;
-
-  // Phase 2: RAG retrieval
-  const ragResult = await rag.retrieve(visionAnalysis.retrievalKeywords);
-  const ragChunks = ragResult.success ? ragResult.data : [];
-  const ragContext = rag.formatContext(ragChunks);
-
-  // Phase 3: Synthesis
-  const synthesisResult = await runpod.synthesizeReport(
-    images,
-    visionAnalysis,
-    ragContext,
-    metadata
-  );
-
-  if (!synthesisResult.success) {
-    return c.json(
-      { success: false, error: synthesisResult.error },
-      synthesisResult.error.code as 400 | 500
+      { success: false, error: assessResult.error },
+      assessResult.error.code as 400 | 500
     );
   }
 
   // Parse the report into structured format
-  const report = parseReport(synthesisResult.data);
+  const report = parseReport(assessResult.data);
 
-  // Phase 4: Save session
+  // Create minimal vision analysis for session state (for chat context)
+  // The agent now handles this internally, but we need session data for chat
+  const visionAnalysis: VisionAnalysisOutput = extractVisionSummary(assessResult.data, metadata);
+
+  // Save session (without RAG chunks - agent retrieves dynamically)
   const sessionId = session.generateSessionId();
   const sessionState: SessionState = {
     sessionId,
@@ -91,7 +75,7 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
     metadata,
     imageUrls: [], // Don't store full images in session
     visionAnalysis,
-    ragChunks,
+    ragChunks: [], // No longer pre-fetching RAG - agent handles dynamically
     report,
     conversationHistory: [],
   };
@@ -111,12 +95,42 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
 }
 
 /**
+ * Extract basic vision summary from report for session state.
+ * Used to provide context in follow-up chat sessions.
+ */
+function extractVisionSummary(reportText: string, metadata: { roomType: string; structureType: string }): VisionAnalysisOutput {
+  // Extract zone classification from report
+  let zoneClassification: 'burn' | 'near-field' | 'far-field' = 'far-field';
+  if (/\bburn\s*zone\b/i.test(reportText)) {
+    zoneClassification = 'burn';
+  } else if (/\bnear[-\s]?field\b/i.test(reportText)) {
+    zoneClassification = 'near-field';
+  }
+
+  // Extract severity from report
+  let overallSeverity: 'heavy' | 'moderate' | 'light' | 'trace' | 'none' = 'moderate';
+  if (/\b(heavy|severe)\s*(damage|contamination)\b/i.test(reportText)) {
+    overallSeverity = 'heavy';
+  } else if (/\blight\s*(damage|contamination)\b/i.test(reportText)) {
+    overallSeverity = 'light';
+  } else if (/\btrace\b/i.test(reportText)) {
+    overallSeverity = 'trace';
+  }
+
+  return {
+    damageInventory: [],
+    retrievalKeywords: [],
+    overallSeverity,
+    zoneClassification,
+    confidenceScore: 0.8,
+  };
+}
+
+/**
  * Parse the LLM report output into structured format
  */
 function parseReport(reportText: string): AssessmentReport {
   // Extract sections from the report text
-  // This is a simplified parser - in production, you might want
-  // the LLM to output structured JSON directly
 
   const sections = {
     executiveSummary: '',
@@ -140,7 +154,7 @@ function parseReport(reportText: string): AssessmentReport {
 
   // Extract FDAM recommendations
   const recMatch = reportText.match(
-    /(?:fdam|recommendations?)[:\s]*\n?([\s\S]*?)(?=\n##|\n\*\*[A-Z]|$)/i
+    /(?:fdam|recommendations?|protocol)[:\s]*\n?([\s\S]*?)(?=\n##|\n\*\*[A-Z]|$)/i
   );
   if (recMatch) {
     sections.fdamRecommendations = recMatch[1]

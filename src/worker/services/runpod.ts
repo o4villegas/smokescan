@@ -1,10 +1,12 @@
 /**
  * RunPod Service
- * Handles communication with the Qwen3-VL vision model endpoint
+ * Handles communication with the Qwen3-VL agent endpoint
+ *
+ * Architecture: Single-call pattern where the agent handles RAG internally via tool calling.
+ * The agent uses the rag_search tool to query Cloudflare AI Search REST API for FDAM methodology.
  */
 
-import type { Result, ApiError, ApiErrorCode, VisionAnalysisOutput, AssessmentMetadata } from '../types';
-import { VisionAnalysisOutputSchema } from '../schemas';
+import type { Result, ApiError, ApiErrorCode, AssessmentMetadata } from '../types';
 
 type RunPodConfig = {
   apiKey: string;
@@ -18,55 +20,12 @@ type RunPodResponse = {
   error?: string;
 };
 
-const PHASE1_SYSTEM_PROMPT = `You are an expert fire damage assessment analyst implementing the FDAM (Fire Damage Assessment Methodology) v4.0.1 protocol.
-
-Analyze the provided images of fire/smoke damage and produce a structured JSON assessment.
-
-Your output MUST be valid JSON with this exact structure:
-{
-  "damageInventory": [
-    {
-      "damageType": "char_damage|smoke_staining|soot_deposit|heat_damage|water_damage|structural_damage|odor_contamination|particulate_contamination",
-      "location": "specific location description (e.g., 'ceiling_northwest', 'wall_east')",
-      "severity": "heavy|moderate|light|trace|none",
-      "material": "affected material (e.g., 'drywall', 'wood_beam', 'hvac_duct')",
-      "notes": "optional additional observations"
-    }
-  ],
-  "retrievalKeywords": ["5-10 technical terms for RAG retrieval"],
-  "overallSeverity": "heavy|moderate|light|trace|none",
-  "zoneClassification": "burn|near-field|far-field",
-  "confidenceScore": 0.0-1.0
-}
-
-Zone Classification Guide:
-- burn: Direct fire involvement, visible char, structural damage from flames
-- near-field: Adjacent to burn zone, heavy smoke/soot, heat exposure but no direct flames
-- far-field: Smoke migration only, no direct heat exposure
-
-Use precise FDAM vocabulary for damage types and materials. Be thorough but accurate.`;
-
-const PHASE3_SYSTEM_PROMPT = `You are an expert fire damage assessment consultant generating a professional FDAM-compliant assessment report.
-
-Based on the structured damage analysis and FDAM methodology context provided, generate a comprehensive assessment report for the property owner/insurance adjuster.
-
-Your report should include:
-1. Executive Summary (2-3 sentences)
-2. Detailed findings by area
-3. FDAM protocol recommendations
-4. Restoration priority matrix
-5. Scope indicators (not dollar amounts)
-
-Write in professional, clear language. Reference FDAM standards where applicable.
-Be specific about locations and severities. Provide actionable recommendations.`;
-
 /**
- * Format system message for Qwen3-VL multimodal requests.
- * The processor requires ALL messages to use list format when ANY message contains images/video.
- * See: https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking
+ * Strip <think>...</think> blocks from Qwen3-VL-Thinking model output.
+ * The model outputs reasoning in these blocks, but they should not be shown to users.
  */
-function formatSystemMessage(text: string) {
-  return { role: 'system', content: [{ type: 'text', text }] };
+function stripThinkBlocks(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
 export class RunPodService {
@@ -79,19 +38,26 @@ export class RunPodService {
   }
 
   /**
-   * Phase 1: Analyze images with vision model to extract structured damage data
+   * Generate FDAM assessment report from images.
+   *
+   * Uses single-call architecture where the Qwen3-VL agent:
+   * 1. Analyzes images for fire damage
+   * 2. Calls RAG tool to retrieve FDAM methodology
+   * 3. Generates grounded assessment report
+   *
+   * RAG is handled internally by the agent via tool calling.
    */
-  async analyzeImages(
+  async assess(
     images: string[],
     metadata: AssessmentMetadata
-  ): Promise<Result<VisionAnalysisOutput, ApiError>> {
+  ): Promise<Result<string, ApiError>> {
     const userPrompt = `Analyze these ${images.length} images of a ${metadata.roomType} in a ${metadata.structureType} structure.
 ${metadata.fireOrigin ? `Fire origin information: ${metadata.fireOrigin}` : ''}
 ${metadata.notes ? `Additional notes: ${metadata.notes}` : ''}
 
-Provide your structured damage assessment as JSON.`;
+Generate a comprehensive FDAM assessment report. Use the rag_search tool to retrieve relevant methodology for your recommendations.`;
 
-    // Build message with images
+    // Build message content with images
     const content: Array<{ type: string; text?: string; image?: string }> = [
       { type: 'text', text: userPrompt },
     ];
@@ -106,11 +72,8 @@ Provide your structured damage assessment as JSON.`;
 
     const requestBody = {
       input: {
-        messages: [
-          formatSystemMessage(PHASE1_SYSTEM_PROMPT),
-          { role: 'user', content },
-        ],
-        max_tokens: 2000,
+        messages: [{ role: 'user', content }],
+        max_tokens: 8000,
       },
     };
 
@@ -119,109 +82,43 @@ Provide your structured damage assessment as JSON.`;
       return result;
     }
 
-    // Parse the LLM response
-    try {
-      const responseData = result.data as { output?: string };
-      const content = responseData.output;
+    const responseData = result.data as { output?: string; error?: string };
 
-      if (!content) {
-        return {
-          success: false,
-          error: { code: 500, message: 'No content in vision model response' },
-        };
-      }
-
-      // Extract JSON from the response (may be wrapped in markdown code blocks)
-      const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) ||
-                        content.match(/```\s*([\s\S]*?)\s*```/) ||
-                        [null, content];
-      const jsonStr = jsonMatch[1] || content;
-
-      const parsed = JSON.parse(jsonStr.trim());
-      const validated = VisionAnalysisOutputSchema.safeParse(parsed);
-
-      if (!validated.success) {
-        return {
-          success: false,
-          error: {
-            code: 422,
-            message: 'Vision model output validation failed',
-            details: validated.error.message,
-          },
-        };
-      }
-
-      return { success: true, data: validated.data };
-    } catch (e) {
+    if (responseData.error) {
       return {
         success: false,
-        error: {
-          code: 500,
-          message: 'Failed to parse vision model response',
-          details: String(e),
-        },
+        error: { code: 500, message: 'Agent error', details: responseData.error },
       };
     }
+
+    const rawContent = responseData.output;
+    if (!rawContent) {
+      return {
+        success: false,
+        error: { code: 500, message: 'No content in agent response' },
+      };
+    }
+
+    // Strip <think> blocks before returning to user
+    const reportContent = stripThinkBlocks(rawContent);
+
+    return { success: true, data: reportContent };
   }
 
   /**
-   * Phase 3: Synthesize final report from analysis + RAG context
+   * Chat completion for follow-up questions.
+   *
+   * Uses the same agent architecture - the agent can call RAG tools
+   * to retrieve additional methodology context as needed.
    */
-  async synthesizeReport(
-    images: string[],
-    visionAnalysis: VisionAnalysisOutput,
-    ragContext: string,
-    metadata: AssessmentMetadata
+  async chat(
+    conversationHistory: Array<{ role: string; content: string }>,
+    sessionContext: string
   ): Promise<Result<string, ApiError>> {
-    const userPrompt = `Generate a professional FDAM assessment report based on:
-
-## Property Information
-- Room Type: ${metadata.roomType}
-- Structure Type: ${metadata.structureType}
-${metadata.fireOrigin ? `- Fire Origin: ${metadata.fireOrigin}` : ''}
-${metadata.notes ? `- Notes: ${metadata.notes}` : ''}
-
-## Damage Analysis Summary
-- Overall Severity: ${visionAnalysis.overallSeverity}
-- Zone Classification: ${visionAnalysis.zoneClassification}
-- Confidence Score: ${(visionAnalysis.confidenceScore * 100).toFixed(1)}%
-
-## Detailed Damage Inventory
-${visionAnalysis.damageInventory
-  .map(
-    (item, i) =>
-      `${i + 1}. ${item.damageType} at ${item.location}
-   - Severity: ${item.severity}
-   - Material: ${item.material}
-   ${item.notes ? `- Notes: ${item.notes}` : ''}`
-  )
-  .join('\n')}
-
-## FDAM Methodology Reference
-${ragContext}
-
-Please generate a complete, professional assessment report.`;
-
-    // Include images for visual reference in synthesis
-    const content: Array<{ type: string; text?: string; image?: string }> = [
-      { type: 'text', text: userPrompt },
-    ];
-
-    // Include first 3 images for context (to stay within token limits)
-    for (const image of images.slice(0, 3)) {
-      const imageUrl = image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
-      content.push({
-        type: 'image',
-        image: imageUrl,
-      });
-    }
-
     const requestBody = {
       input: {
-        messages: [
-          formatSystemMessage(PHASE3_SYSTEM_PROMPT),
-          { role: 'user', content },
-        ],
+        messages: conversationHistory,
+        session_context: sessionContext,
         max_tokens: 4000,
       },
     };
@@ -231,57 +128,25 @@ Please generate a complete, professional assessment report.`;
       return result;
     }
 
-    const responseData = result.data as { output?: string };
-    const reportContent = responseData.output;
+    const responseData = result.data as { output?: string; error?: string };
 
-    if (!reportContent) {
+    if (responseData.error) {
       return {
         success: false,
-        error: { code: 500, message: 'No content in synthesis response' },
+        error: { code: 500, message: 'Agent error', details: responseData.error },
       };
     }
 
-    return { success: true, data: reportContent };
-  }
-
-  /**
-   * Chat completion for follow-up questions
-   */
-  async chat(
-    conversationHistory: Array<{ role: string; content: string }>,
-    sessionContext: string
-  ): Promise<Result<string, ApiError>> {
-    const systemPrompt = `You are an expert fire damage assessment consultant. You have access to a previous assessment and can answer follow-up questions about the findings, recommendations, and FDAM methodology.
-
-Previous Assessment Context:
-${sessionContext}
-
-Answer questions clearly and professionally. Reference specific findings from the assessment when relevant.`;
-
-    const requestBody = {
-      input: {
-        messages: [
-          formatSystemMessage(systemPrompt),
-          ...conversationHistory,
-        ],
-        max_tokens: 2000,
-      },
-    };
-
-    const result = await this.callEndpoint(requestBody);
-    if (!result.success) {
-      return result;
-    }
-
-    const responseData = result.data as { output?: string };
-    const response = responseData.output;
-
-    if (!response) {
+    const rawResponse = responseData.output;
+    if (!rawResponse) {
       return {
         success: false,
         error: { code: 500, message: 'No content in chat response' },
       };
     }
+
+    // Strip <think> blocks before returning to user
+    const response = stripThinkBlocks(rawResponse);
 
     return { success: true, data: response };
   }
@@ -333,9 +198,9 @@ Answer questions clearly and professionally. Reference specific findings from th
         };
       }
 
-      // Poll for completion
+      // Poll for completion - agent may take longer due to tool calls
       const jobId = submitResult.id;
-      const maxAttempts = 60; // 5 minutes with 5s intervals
+      const maxAttempts = 120; // 10 minutes with 5s intervals (agent may make multiple tool calls)
       const pollInterval = 5000;
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {

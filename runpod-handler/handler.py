@@ -1,153 +1,191 @@
 """
-SmokeScan RunPod Handler - Qwen3-VL Vision Model
-Based on official HuggingFace example:
-https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking
+SmokeScan RunPod Handler - Qwen3-VL Agent with RAG Tool Calling
+Uses qwen-agent framework to orchestrate vision analysis + FDAM methodology retrieval.
+
+Architecture:
+1. vLLM server provides OpenAI-compatible API (started by start.sh)
+2. qwen-agent connects to vLLM and handles tool orchestration
+3. RAG tool calls Cloudflare AI Search REST API for FDAM context
+4. Agent generates grounded reports with methodology citations
 """
 import runpod
-import os
+import re
 import sys
-import traceback
 
-# === DIAGNOSTIC: Print versions to help debug import issues ===
 print("SmokeScan Vision Handler - Starting initialization...")
 print(f"Python version: {sys.version}")
 
-import transformers
-print(f"Transformers version: {transformers.__version__}")
+# Import qwen-agent components
+from qwen_agent.agents import Assistant
 
-# === MODEL LOADING - BEFORE serverless.start() ===
-# Per RunPod docs: "You will want models to be loaded into memory before starting serverless"
-print("Importing model classes...")
+# Import custom RAG tool (registers it via @register_tool decorator)
+from tools.rag_search import RAGSearch
+print("RAG Search tool registered")
 
-try:
-    from transformers import Qwen3VLMoeForConditionalGeneration, AutoProcessor
-    print("Model classes imported successfully")
-except ImportError as e:
-    print(f"IMPORT ERROR: {e}")
-    print("This usually means transformers version is incompatible.")
-    print("Qwen3VLMoeForConditionalGeneration requires transformers>=4.57.1")
-    print("Current Dockerfile pins transformers==4.57.3")
-    raise
+# FDAM Assessment System Prompt
+FDAM_SYSTEM_PROMPT = """You are an expert fire damage assessment consultant implementing FDAM (Fire Damage Assessment Methodology) v4.0.1.
 
-MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Thinking"
-RUNPOD_CACHE_DIR = "/runpod-volume/huggingface-cache/hub"
+Your role is to analyze fire/smoke damage images and generate professional, scientifically-defensible assessment reports.
+
+## Assessment Process
+
+1. **Visual Analysis**: Carefully observe provided images for:
+   - Zone classification (burn, near-field, far-field)
+   - Damage types (char, smoke staining, soot deposits, heat damage)
+   - Material identification and categorization (non-porous, semi-porous, porous, hvac)
+   - Combustion indicators (aciniform soot patterns, char particles, ash residue)
+   - Severity levels (heavy, moderate, light, trace, background)
+
+2. **Methodology Retrieval**: Use the rag_search tool to retrieve relevant FDAM methodology for:
+   - Cleaning protocols per surface type and condition level
+   - Threshold criteria (particulates: ash/char <150/cm2, soot <500/cm2)
+   - Disposition recommendations per FDAM section 4.3
+   - Sampling requirements per FDAM section 2.3
+   - Standards references (BNL SOP IH75190, NADCA ACR 2021)
+
+3. **Report Generation**: Generate comprehensive report with:
+   - Executive Summary (2-3 sentences)
+   - Damage Assessment by Area (location, material, severity, observations)
+   - FDAM Protocol Recommendations (cleaning methods, sequence, verification)
+   - Disposition Summary (zone/condition matrix per FDAM section 4.3)
+   - Sampling Plan Recommendations (per FDAM section 2.3)
+   - Scope Indicators (labor intensity, equipment - NO dollar amounts)
+
+## Zone Classification (IICRC/RIA/CIRI Technical Guide)
+- **burn**: Direct fire involvement, visible char, structural damage from flames
+- **near-field**: Adjacent to burn zone, heavy smoke/soot, heat exposure, no direct flames
+- **far-field**: Smoke migration only, no direct heat exposure, light to moderate deposits
+
+## Condition Scale
+- **background**: No visible contamination, equivalent to unaffected areas
+- **light**: Faint discoloration, minimal deposits visible on white wipe test
+- **moderate**: Visible film or deposits, clear contamination on white wipe
+- **heavy**: Thick deposits, surface texture obscured, significant odor indicators
+- **structural-damage**: Physical damage requiring repair before cleaning
+
+## Material Categories (FDAM section 4.3)
+- **non-porous**: steel, concrete, glass, metal, CMU (cleanable)
+- **semi-porous**: painted drywall, sealed wood (evaluate restorability)
+- **porous**: carpet, insulation, acoustic tile (often requires removal)
+- **hvac**: ductwork, interior insulation (per NADCA ACR standards)
+
+## Critical Requirements
+- ALWAYS use rag_search before making disposition or protocol recommendations
+- Cite specific FDAM sections and standards from retrieved context
+- Ground ALL recommendations in methodology - never speculate
+- Be thorough and precise - use FDAM terminology throughout
+- Do NOT include cost estimates or dollar amounts
+"""
+
+# Chat System Prompt (for follow-up conversations)
+CHAT_SYSTEM_PROMPT = """You are an expert fire damage assessment consultant with access to a previous FDAM assessment.
+
+You can answer follow-up questions about:
+- Assessment findings and recommendations
+- FDAM methodology and standards
+- Cleaning protocols and procedures
+- Sampling requirements and thresholds
+- Material disposition guidelines
+
+Use the rag_search tool when you need specific methodology information to answer questions accurately.
+Always ground your responses in FDAM methodology.
+
+Previous Assessment Context:
+{session_context}
+"""
 
 
-def find_cached_model_path(model_name):
-    """Locate cached model using RunPod's cache structure."""
-    cache_name = model_name.replace("/", "--")
-    snapshots_dir = os.path.join(RUNPOD_CACHE_DIR, f"models--{cache_name}", "snapshots")
-
-    if os.path.exists(snapshots_dir):
-        snapshots = os.listdir(snapshots_dir)
-        if snapshots:
-            return os.path.join(snapshots_dir, snapshots[0])
-    return None
-
-
-# Check for RunPod cached model first
-model_path = find_cached_model_path(MODEL_NAME)
-if model_path:
-    print(f"Using RunPod cached model at: {model_path}")
-else:
-    print(f"No RunPod cache found - loading from HuggingFace: {MODEL_NAME}")
-    model_path = MODEL_NAME
-
-print("Loading processor...")
-processor = AutoProcessor.from_pretrained(model_path)
-print("Processor loaded")
-
-print("Loading model (this may take several minutes)...")
-model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
-    model_path,
-    dtype="auto",  # Correct for Qwen3-VL (verified from official docs)
-    device_map="auto"
-)
-print("Model loaded successfully!")
-
-
-def normalize_messages(messages):
+def strip_think_blocks(text: str) -> str:
     """
-    Normalize message content to list format for Qwen3-VL processor.
-
-    The processor's apply_chat_template expects consistent content format.
-    When any message has list content (multimodal), ALL messages must use list format.
-    This converts string content to [{"type": "text", "text": "..."}] format.
+    Remove <think>...</think> blocks from Qwen3-VL-Thinking model output.
+    The model outputs reasoning in these blocks, but they should not be shown to users.
     """
-    has_multimodal = any(
-        isinstance(msg.get("content"), list) for msg in messages
+    return re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+
+
+def create_agent(system_prompt: str):
+    """Create a qwen-agent Assistant configured for FDAM assessment."""
+    llm_cfg = {
+        'model_type': 'qwenvl_oai',
+        'model': 'qwen3-vl',  # Served model name from vLLM
+        'model_server': 'http://localhost:8000/v1',
+        'api_key': 'EMPTY',
+        'generate_cfg': {
+            'max_new_tokens': 8000,
+            'temperature': 0.7,
+        }
+    }
+
+    return Assistant(
+        llm=llm_cfg,
+        function_list=['rag_search'],
+        system_message=system_prompt,
     )
-
-    if not has_multimodal:
-        return messages
-
-    normalized = []
-    for msg in messages:
-        content = msg.get("content")
-        if isinstance(content, str):
-            # Convert string content to list format
-            normalized.append({
-                "role": msg["role"],
-                "content": [{"type": "text", "text": content}]
-            })
-        else:
-            normalized.append(msg)
-
-    return normalized
 
 
 def handler(job):
     """
-    RunPod handler - processes vision/text requests.
-    Model is already loaded in memory.
+    RunPod handler - processes assessment and chat requests.
+    Uses qwen-agent for tool orchestration.
 
     Input format:
     {
         "messages": [
             {"role": "user", "content": [
-                {"type": "image", "image": "https://..."},
-                {"type": "text", "text": "Describe this image."}
+                {"type": "image", "image": "data:image/jpeg;base64,..."},
+                {"type": "text", "text": "Analyze this fire damage."}
             ]}
         ],
-        "max_tokens": 128
+        "max_tokens": 8000,
+        "session_context": "..." (optional, for chat mode)
     }
     """
     try:
         job_input = job["input"]
         messages = job_input.get("messages", [])
-        max_tokens = job_input.get("max_tokens", 128)
+        session_context = job_input.get("session_context", "")
 
         if not messages:
             return {"error": "No messages provided"}
 
-        # Normalize message format for multimodal requests
-        messages = normalize_messages(messages)
+        # Determine if this is chat mode (has session context)
+        if session_context:
+            system_prompt = CHAT_SYSTEM_PROMPT.format(session_context=session_context)
+        else:
+            system_prompt = FDAM_SYSTEM_PROMPT
 
-        inputs = processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt"
-        ).to(model.device)
+        # Create agent
+        agent = create_agent(system_prompt)
 
-        generated_ids = model.generate(**inputs, max_new_tokens=max_tokens)
-        generated_ids_trimmed = [
-            out_ids[len(in_ids):]
-            for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-        ]
-        output_text = processor.batch_decode(
-            generated_ids_trimmed,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False
-        )[0]
+        # Run agent (handles tool orchestration automatically)
+        final_response = ""
+        for response in agent.run(messages):
+            # Get the last assistant message with content
+            for msg in reversed(response):
+                if msg.get("role") == "assistant" and msg.get("content"):
+                    content = msg["content"]
+                    # Handle both string and list content formats
+                    if isinstance(content, list):
+                        texts = [item.get("text", "") for item in content if item.get("type") == "text"]
+                        final_response = "\n".join(texts)
+                    else:
+                        final_response = content
+                    break
 
-        return {"output": output_text}
+        if not final_response:
+            return {"error": "No response generated by agent"}
+
+        # Strip <think> blocks before returning to user
+        final_response = strip_think_blocks(final_response)
+
+        return {"output": final_response}
 
     except Exception as e:
+        import traceback
         error_trace = traceback.format_exc()
         print(f"Handler error: {e}\n{error_trace}")
         return {"error": str(e), "traceback": error_trace}
 
 
+print("Handler initialized - waiting for vLLM server...")
 runpod.serverless.start({"handler": handler})

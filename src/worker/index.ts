@@ -10,6 +10,7 @@ import {
   handleAssess,
   handleChat,
   handleHealth,
+  handleRagTest,
   projectsRoutes,
   assessmentsRoutes,
   imagesRoutes,
@@ -30,6 +31,9 @@ app.use('/api/*', cors({
 
 // Health check endpoint
 app.get('/api/health', handleHealth);
+
+// RAG test endpoint (for debugging AI Search)
+app.get('/api/health/rag', handleRagTest);
 
 // Project management routes
 app.route('/api/projects', projectsRoutes);

@@ -69,17 +69,36 @@ export type DamageType =
   | 'odor_contamination'
   | 'particulate_contamination';
 
+// Material categories (FDAM §4.3 - affects disposition logic)
+export type MaterialCategory =
+  | 'non-porous'   // steel, concrete, glass, metal, CMU (cleanable)
+  | 'semi-porous'  // painted drywall, sealed wood (evaluate)
+  | 'porous'       // carpet, insulation, acoustic tile (often remove)
+  | 'hvac';        // ductwork, interior insulation (per NADCA ACR)
+
+// Combustion indicators (EAA Method Guide particle morphology)
+export type CombustionIndicators = {
+  sootVisible: boolean;
+  sootPattern?: string;  // Description of aciniform soot patterns
+  charVisible: boolean;
+  charDescription?: string;  // Description of char particles
+  ashVisible: boolean;
+  ashDescription?: string;  // Description of ash residue
+};
+
 // Phase 1: Vision model structured output
 export type DamageInventoryItem = {
   damageType: DamageType;
   location: string;
   severity: Severity;
   material: string;
+  materialCategory?: MaterialCategory;
   notes?: string;
 };
 
 export type VisionAnalysisOutput = {
   damageInventory: DamageInventoryItem[];
+  combustionIndicators?: CombustionIndicators;
   retrievalKeywords: string[];
   overallSeverity: Severity;
   zoneClassification: Zone;

@@ -81,16 +81,34 @@ export const DamageTypeSchema = z.enum([
   'particulate_contamination',
 ]);
 
+export const MaterialCategorySchema = z.enum([
+  'non-porous',
+  'semi-porous',
+  'porous',
+  'hvac',
+]);
+
 export const DamageInventoryItemSchema = z.object({
   damageType: DamageTypeSchema,
   location: z.string(),
   severity: SeveritySchema,
   material: z.string(),
+  materialCategory: MaterialCategorySchema.optional(), // Optional for backward compatibility
   notes: z.string().optional(),
+});
+
+export const CombustionIndicatorsSchema = z.object({
+  sootVisible: z.boolean(),
+  sootPattern: z.string().optional(),
+  charVisible: z.boolean(),
+  charDescription: z.string().optional(),
+  ashVisible: z.boolean(),
+  ashDescription: z.string().optional(),
 });
 
 export const VisionAnalysisOutputSchema = z.object({
   damageInventory: z.array(DamageInventoryItemSchema),
+  combustionIndicators: CombustionIndicatorsSchema.optional(), // Optional for backward compatibility
   retrievalKeywords: z.array(z.string()).min(3).max(15),
   overallSeverity: SeveritySchema,
   zoneClassification: ZoneSchema,

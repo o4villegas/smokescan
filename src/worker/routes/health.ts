@@ -1,6 +1,7 @@
 /**
  * Health Check Route Handler
  * GET /api/health - System health status
+ * GET /api/health/rag?q=query - Test AI Search binding
  */
 
 import type { Context } from 'hono';
@@ -52,4 +53,37 @@ export async function handleHealth(c: Context<{ Bindings: WorkerEnv }>) {
   const statusCode = checks.status === 'unhealthy' ? 503 : 200;
 
   return c.json(checks, statusCode);
+}
+
+/**
+ * Test AI Search binding directly
+ * GET /api/health/rag?q=query
+ */
+export async function handleRagTest(c: Context<{ Bindings: WorkerEnv }>) {
+  const query = c.req.query('q') || 'FDAM fire damage methodology';
+
+  try {
+    const response = await c.env.AI.autorag('smokescan-rag').search({
+      query,
+      max_num_results: 5,
+      rewrite_query: true,
+    });
+
+    return c.json({
+      success: true,
+      query,
+      results: response.data?.map((r) => ({
+        filename: r.filename,
+        score: r.score,
+        contentPreview: r.content?.[0]?.text?.slice(0, 200) + '...',
+      })) || [],
+      total: response.data?.length || 0,
+    });
+  } catch (e) {
+    return c.json({
+      success: false,
+      query,
+      error: String(e),
+    }, 500);
+  }
 }

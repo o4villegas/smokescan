@@ -1,12 +1,15 @@
 /**
  * Chat Route Handler
  * POST /api/chat - Send follow-up questions about an assessment
+ *
+ * Architecture: The agent handles RAG internally via tool calling.
+ * Session context provides previous assessment data for grounded responses.
  */
 
 import type { Context } from 'hono';
 import type { WorkerEnv } from '../types';
 import { ChatRequestSchema } from '../schemas';
-import { RunPodService, RAGService, SessionService } from '../services';
+import { RunPodService, SessionService } from '../services';
 
 export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
   // Parse and validate request
@@ -50,10 +53,8 @@ export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
 
   const session = sessionResult.data;
 
-  // Build context from session
-  const rag = new RAGService({ ai: c.env.AI });
-  const ragContext = rag.formatContext(session.ragChunks);
-
+  // Build session context for the agent
+  // The agent can use rag_search tool for additional methodology lookups
   const sessionContext = `
 ## Assessment Summary
 - Room Type: ${session.metadata.roomType}
@@ -61,17 +62,11 @@ export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
 - Overall Severity: ${session.visionAnalysis.overallSeverity}
 - Zone Classification: ${session.visionAnalysis.zoneClassification}
 
-## Key Findings
-${session.visionAnalysis.damageInventory
-  .slice(0, 5)
-  .map((item) => `- ${item.damageType} at ${item.location} (${item.severity})`)
-  .join('\n')}
-
 ## Executive Summary
 ${session.report.executiveSummary}
 
-## FDAM Reference
-${ragContext}
+## Key Recommendations
+${session.report.fdamRecommendations.slice(0, 5).map((r) => `- ${r}`).join('\n')}
 `;
 
   // Build conversation history
@@ -83,7 +78,7 @@ ${ragContext}
     { role: 'user' as const, content: message },
   ];
 
-  // Get chat response
+  // Get chat response from agent
   const runpod = new RunPodService({
     apiKey: c.env.RUNPOD_API_KEY,
     endpointId: c.env.RUNPOD_VISION_ENDPOINT_ID,
