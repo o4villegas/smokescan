@@ -11,12 +11,11 @@ ENV PYTHONUNBUFFERED=1
 # REMOVED: HF_HOME and TRANSFORMERS_CACHE pointing to /runpod-volume/
 # Let HuggingFace use default cache OR RunPod's model caching system
 
-# Uninstall any existing transformers to avoid conflicts
-# Then install from git HEAD (required for Qwen3VLMoeForConditionalGeneration)
-# See: https://github.com/huggingface/transformers/issues/41447
+# Install transformers 4.57.3 (latest stable with Qwen3-VL support)
+# NOTE: Do NOT use git HEAD - it has tensor shape regression for expert layers
+# NOTE: 4.57.0 was yanked from PyPI
 RUN pip uninstall -y transformers 2>/dev/null || true && \
-    pip install --no-cache-dir --force-reinstall \
-    git+https://github.com/huggingface/transformers.git
+    pip install --no-cache-dir transformers==4.57.3
 
 # Install other required packages
 RUN pip install --no-cache-dir \
