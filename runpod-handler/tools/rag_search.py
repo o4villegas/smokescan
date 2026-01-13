@@ -16,12 +16,13 @@ class RAGSearch(BaseTool):
         return """
 Search the FDAM (Fire Damage Assessment Methodology) knowledge base for:
 - Cleaning protocols and procedures by surface type
-- Threshold values (particulates: ash/char <150, soot <500; metals per BNL SOP)
+- Threshold values and clearance criteria (do not assume - retrieve from methodology)
 - Zone classification criteria (burn, near-field, far-field)
-- Sampling requirements per FDAM section 2.3
-- Material disposition guidelines per FDAM section 4.3
-- Standards references (BNL SOP IH75190, NADCA ACR 2021, IICRC S520)
+- Sampling requirements per FDAM sections
+- Material disposition guidelines
+- Standards references (BNL SOP, NADCA ACR, IICRC, EPA/HUD)
 
+Results are labeled [FDAM] for authoritative methodology or [Reference] for supporting materials.
 Use this tool when you need specific methodology information to ground your assessment.
 """.strip()
 

@@ -30,7 +30,7 @@ class LocalRAGPipeline:
             torch_dtype=torch.bfloat16,
             # Note: Using default attention (SDPA on PyTorch 2.4+)
             # flash_attention_2 requires separate installation
-            default_instruction="Retrieve fire damage assessment methodology information."
+            default_instruction="Retrieve FDAM methodology that answers this fire damage assessment question."
         )
 
         print("Loading Qwen3-VL-Reranker-8B...")
@@ -38,7 +38,7 @@ class LocalRAGPipeline:
             model_name_or_path=reranker_model,
             torch_dtype=torch.bfloat16,
             # Note: Using default attention (SDPA on PyTorch 2.4+)
-            default_instruction="Given a fire damage query, retrieve relevant FDAM methodology."
+            default_instruction="Retrieve FDAM methodology relevant to this fire damage assessment query."
         )
 
         # Load FAISS index and chunks
@@ -59,7 +59,7 @@ class LocalRAGPipeline:
         # Embed query
         query_embedding = self.embed_texts(
             [query],
-            instruction="Retrieve fire damage assessment methodology information."
+            instruction="Retrieve FDAM methodology that answers this fire damage assessment question."
         )
 
         # Search FAISS
@@ -82,7 +82,7 @@ class LocalRAGPipeline:
 
         # Format for reranker
         inputs = {
-            "instruction": "Given a fire damage query, retrieve relevant FDAM methodology.",
+            "instruction": "Retrieve FDAM methodology relevant to this fire damage assessment query.",
             "query": {"text": query},
             "documents": [{"text": c["chunk"]["text"]} for c in candidates]
         }
@@ -105,14 +105,16 @@ class LocalRAGPipeline:
         # Rerank to top-5
         reranked = self.rerank(query, candidates, top_k=top_k)
 
-        # Format results
+        # Format results with source hierarchy labels
         formatted = []
         for item in reranked:
             chunk = item["chunk"]
-            source = chunk.get("source", "FDAM")
+            source = chunk.get("source", "unknown")
             text = chunk.get("text", "")
             score = item.get("rerank_score", 0)
-            formatted.append(f"[{source}] (relevance: {score:.2f})\n{text}")
+            doc_type = chunk.get("doc_type", "reference")
+            label = "[FDAM]" if doc_type == "primary" else "[Reference]"
+            formatted.append(f"{label} {source} (relevance: {score:.2f})\n{text}")
 
         return "\n\n---\n\n".join(formatted) if formatted else "No relevant methodology found."
 

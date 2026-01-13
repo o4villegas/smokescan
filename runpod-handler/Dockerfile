@@ -30,8 +30,9 @@ RUN pip uninstall -y transformers 2>/dev/null || true && \
 RUN pip install --no-cache-dir qwen-agent
 
 # Install RAG dependencies
+# NOTE: faiss-gpu-cu12 required for Python 3.11 + CUDA 12.x (generic faiss-gpu has no wheels)
 RUN pip install --no-cache-dir \
-    faiss-gpu \
+    faiss-gpu-cu12 \
     scipy \
     qwen-vl-utils>=0.0.14
 

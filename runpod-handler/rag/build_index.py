@@ -16,11 +16,17 @@ sys.path.insert(0, '/app')
 
 from models.qwen3_vl_embedding import Qwen3VLEmbedder
 
+# Document hierarchy - FDAM methodology is authoritative, others are supporting references
+PRIMARY_DOCS = ["FDAM_v4_METHODOLOGY.md"]
+
 
 def chunk_document(text: str, source: str, chunk_size: int = 400, overlap: int = 50) -> list:
-    """Split document into overlapping chunks (by words)."""
+    """Split document into overlapping chunks with source type metadata."""
     words = text.split()
     chunks = []
+
+    # Determine document type for source hierarchy
+    doc_type = "primary" if source in PRIMARY_DOCS else "reference"
 
     for i in range(0, len(words), chunk_size - overlap):
         chunk_words = words[i:i + chunk_size]
@@ -28,7 +34,8 @@ def chunk_document(text: str, source: str, chunk_size: int = 400, overlap: int =
         chunks.append({
             "text": chunk_text,
             "source": source,
-            "start_idx": i
+            "start_idx": i,
+            "doc_type": doc_type
         })
 
     return chunks
@@ -47,7 +54,7 @@ def build_index(
         model_name_or_path=model_name,
         torch_dtype=torch.bfloat16,
         # Note: Using default attention (SDPA on PyTorch 2.4+)
-        default_instruction="Represent the FDAM methodology content."
+        default_instruction="Represent this fire damage assessment methodology."
     )
 
     # Collect all chunks from markdown files
