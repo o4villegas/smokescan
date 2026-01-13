@@ -1,4 +1,5 @@
 # SmokeScan RunPod Handler - Qwen3-VL Vision Model with Local RAG
+# Build v2: aggressive disk cleanup for GitHub Actions
 # Uses vLLM for vision + qwen-agent for tool calling + local FAISS for RAG
 #
 # Models loaded at runtime:
