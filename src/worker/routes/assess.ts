@@ -64,7 +64,7 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
 
   // Create minimal vision analysis for session state (for chat context)
   // The agent now handles this internally, but we need session data for chat
-  const visionAnalysis: VisionAnalysisOutput = extractVisionSummary(assessResult.data, metadata);
+  const visionAnalysis: VisionAnalysisOutput = extractVisionSummary(assessResult.data);
 
   // Save session (without RAG chunks - agent retrieves dynamically)
   const sessionId = session.generateSessionId();
@@ -98,7 +98,7 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
  * Extract basic vision summary from report for session state.
  * Used to provide context in follow-up chat sessions.
  */
-function extractVisionSummary(reportText: string, metadata: { roomType: string; structureType: string }): VisionAnalysisOutput {
+function extractVisionSummary(reportText: string): VisionAnalysisOutput {
   // Extract zone classification from report
   let zoneClassification: 'burn' | 'near-field' | 'far-field' = 'far-field';
   if (/\bburn\s*zone\b/i.test(reportText)) {
