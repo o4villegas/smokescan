@@ -1,5 +1,10 @@
-# SmokeScan RunPod Handler - Qwen3-VL Vision Model with Agent Support
-# Uses vLLM for OpenAI-compatible API + qwen-agent for tool calling
+# SmokeScan RunPod Handler - Qwen3-VL Vision Model with Local RAG
+# Uses vLLM for vision + qwen-agent for tool calling + local FAISS for RAG
+#
+# Models loaded at runtime:
+# - Qwen3-VL-30B-A3B-Thinking (vision + generation via vLLM)
+# - Qwen3-VL-Embedding-8B (local embeddings)
+# - Qwen3-VL-Reranker-8B (local reranking)
 #
 # Based on official Qwen3-VL requirements:
 # https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking
@@ -23,6 +28,12 @@ RUN pip uninstall -y transformers 2>/dev/null || true && \
 # Install qwen-agent for tool calling support
 RUN pip install --no-cache-dir qwen-agent
 
+# Install RAG dependencies
+RUN pip install --no-cache-dir \
+    faiss-gpu \
+    scipy \
+    qwen-vl-utils>=0.0.14
+
 # Install other required packages
 RUN pip install --no-cache-dir \
     accelerate>=0.34.0 \
@@ -30,7 +41,6 @@ RUN pip install --no-cache-dir \
     runpod \
     sentencepiece \
     protobuf \
-    qwen-vl-utils \
     einops \
     tiktoken \
     requests
@@ -40,9 +50,19 @@ RUN python -c "import transformers; print(f'Transformers: {transformers.__versio
 RUN python -c "import vllm; print(f'vLLM: {vllm.__version__}')"
 RUN python -c "import qwen_agent; print('qwen-agent: OK')"
 RUN python -c "from qwen_agent.tools.base import BaseTool, register_tool; print('qwen-agent tools: OK')"
+RUN python -c "import faiss; print('FAISS: OK')"
 
 # Create working directory
 WORKDIR /app
+
+# Copy model files from Qwen3-VL-Embedding repo (embedding + reranker classes)
+COPY models/ /app/models/
+
+# Copy RAG pipeline
+COPY rag/ /app/rag/
+
+# Copy FDAM knowledge base documents
+COPY RAG-KB/ /app/RAG-KB/
 
 # Copy tools directory (must be before handler for imports)
 COPY tools/ /app/tools/
@@ -51,6 +71,9 @@ COPY tools/ /app/tools/
 COPY handler.py /app/handler.py
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
+
+# Note: FAISS index is built at runtime (first startup) to use GPU
+# Building at container build time would require GPU during docker build
 
 # Set the entrypoint to startup script
 CMD ["/app/start.sh"]

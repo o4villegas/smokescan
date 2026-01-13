@@ -1,11 +1,11 @@
 """
-SmokeScan RunPod Handler - Qwen3-VL Agent with RAG Tool Calling
+SmokeScan RunPod Handler - Qwen3-VL Agent with Local RAG Pipeline
 Uses qwen-agent framework to orchestrate vision analysis + FDAM methodology retrieval.
 
 Architecture:
 1. vLLM server provides OpenAI-compatible API (started by start.sh)
 2. qwen-agent connects to vLLM and handles tool orchestration
-3. RAG tool calls Cloudflare AI Search REST API for FDAM context
+3. RAG tool uses local Qwen3-VL-Embedding-8B + FAISS + Qwen3-VL-Reranker-8B
 4. Agent generates grounded reports with methodology citations
 """
 import runpod
@@ -21,6 +21,13 @@ from qwen_agent.agents import Assistant
 # Import custom RAG tool (registers it via @register_tool decorator)
 from tools.rag_search import RAGSearch
 print("RAG Search tool registered")
+
+# Preload RAG pipeline at module load (before accepting requests)
+# This loads Qwen3-VL-Embedding-8B + Qwen3-VL-Reranker-8B into VRAM
+from rag.pipeline import get_rag_pipeline
+print("Preloading RAG pipeline (embedding + reranker models)...")
+_rag = get_rag_pipeline()
+print(f"RAG pipeline ready! ({len(_rag.chunks)} chunks indexed)")
 
 # FDAM Assessment System Prompt
 FDAM_SYSTEM_PROMPT = """You are an expert fire damage assessment consultant implementing FDAM (Fire Damage Assessment Methodology) v4.0.1.
@@ -187,5 +194,5 @@ def handler(job):
         return {"error": str(e), "traceback": error_trace}
 
 
-print("Handler initialized - waiting for vLLM server...")
+print("Handler initialized - waiting for requests...")
 runpod.serverless.start({"handler": handler})

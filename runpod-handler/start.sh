@@ -1,6 +1,7 @@
 #!/bin/bash
 # SmokeScan RunPod Startup Script
-# Starts vLLM server for OpenAI-compatible API, then runs the handler
+# Starts vLLM server for vision, builds FAISS index, then runs handler
+# Handler preloads embedding/reranker models before accepting requests
 
 set -e
 
@@ -8,7 +9,7 @@ MODEL_NAME="Qwen/Qwen3-VL-30B-A3B-Thinking"
 RUNPOD_CACHE_DIR="/runpod-volume/huggingface-cache/hub"
 VLLM_PORT=8000
 
-echo "SmokeScan Vision Handler - Starting..."
+echo "=== SmokeScan Vision Server Startup ==="
 
 # Find cached model path (RunPod cache structure)
 find_cached_model() {
@@ -35,6 +36,15 @@ else
     MODEL_PATH="$MODEL_NAME"
 fi
 
+# Build FAISS index if not exists
+if [ ! -f "/app/rag/fdam_index.faiss" ]; then
+    echo "Building FAISS index from FDAM documents..."
+    python /app/rag/build_index.py
+    echo "FAISS index built successfully!"
+else
+    echo "FAISS index already exists, skipping build"
+fi
+
 # Start vLLM server in background
 echo "Starting vLLM server on port $VLLM_PORT..."
 python -m vllm.entrypoints.openai.api_server \
@@ -44,8 +54,13 @@ python -m vllm.entrypoints.openai.api_server \
     --trust-remote-code \
     --dtype auto \
     --max-model-len 8192 \
-    --gpu-memory-utilization 0.9 \
+    --gpu-memory-utilization 0.35 \
     &
+
+# NOTE: gpu-memory-utilization set to 0.35 (~28GB) to leave room for:
+# - Qwen3-VL-Embedding-8B (~16GB)
+# - Qwen3-VL-Reranker-8B (~16GB)
+# - FAISS index (~2GB)
 
 VLLM_PID=$!
 echo "vLLM server started with PID: $VLLM_PID"
@@ -78,5 +93,6 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
 fi
 
 # Start the RunPod handler
-echo "Starting RunPod handler..."
+# Handler will preload embedding/reranker models before accepting requests
+echo "Starting RunPod handler (will preload RAG pipeline)..."
 exec python -u /app/handler.py
