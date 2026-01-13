@@ -60,6 +60,15 @@ Your report should include:
 Write in professional, clear language. Reference FDAM standards where applicable.
 Be specific about locations and severities. Provide actionable recommendations.`;
 
+/**
+ * Format system message for Qwen3-VL multimodal requests.
+ * The processor requires ALL messages to use list format when ANY message contains images/video.
+ * See: https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking
+ */
+function formatSystemMessage(text: string) {
+  return { role: 'system', content: [{ type: 'text', text }] };
+}
+
 export class RunPodService {
   private config: RunPodConfig;
   private baseUrl: string;
@@ -98,7 +107,7 @@ Provide your structured damage assessment as JSON.`;
     const requestBody = {
       input: {
         messages: [
-          { role: 'system', content: PHASE1_SYSTEM_PROMPT },
+          formatSystemMessage(PHASE1_SYSTEM_PROMPT),
           { role: 'user', content },
         ],
         max_tokens: 2000,
@@ -210,7 +219,7 @@ Please generate a complete, professional assessment report.`;
     const requestBody = {
       input: {
         messages: [
-          { role: 'system', content: PHASE3_SYSTEM_PROMPT },
+          formatSystemMessage(PHASE3_SYSTEM_PROMPT),
           { role: 'user', content },
         ],
         max_tokens: 4000,
@@ -252,7 +261,7 @@ Answer questions clearly and professionally. Reference specific findings from th
     const requestBody = {
       input: {
         messages: [
-          { role: 'system', content: systemPrompt },
+          formatSystemMessage(systemPrompt),
           ...conversationHistory,
         ],
         max_tokens: 2000,

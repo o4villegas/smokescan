@@ -24,9 +24,9 @@ try:
     print("Model classes imported successfully")
 except ImportError as e:
     print(f"IMPORT ERROR: {e}")
-    print("This usually means transformers version is too old.")
-    print("Qwen3VLMoeForConditionalGeneration requires transformers from git HEAD")
-    print("See: https://github.com/huggingface/transformers/issues/41447")
+    print("This usually means transformers version is incompatible.")
+    print("Qwen3VLMoeForConditionalGeneration requires transformers>=4.57.1")
+    print("Current Dockerfile pins transformers==4.57.3")
     raise
 
 MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Thinking"
@@ -66,6 +66,36 @@ model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
 print("Model loaded successfully!")
 
 
+def normalize_messages(messages):
+    """
+    Normalize message content to list format for Qwen3-VL processor.
+
+    The processor's apply_chat_template expects consistent content format.
+    When any message has list content (multimodal), ALL messages must use list format.
+    This converts string content to [{"type": "text", "text": "..."}] format.
+    """
+    has_multimodal = any(
+        isinstance(msg.get("content"), list) for msg in messages
+    )
+
+    if not has_multimodal:
+        return messages
+
+    normalized = []
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, str):
+            # Convert string content to list format
+            normalized.append({
+                "role": msg["role"],
+                "content": [{"type": "text", "text": content}]
+            })
+        else:
+            normalized.append(msg)
+
+    return normalized
+
+
 def handler(job):
     """
     RunPod handler - processes vision/text requests.
@@ -89,6 +119,9 @@ def handler(job):
 
         if not messages:
             return {"error": "No messages provided"}
+
+        # Normalize message format for multimodal requests
+        messages = normalize_messages(messages)
 
         inputs = processor.apply_chat_template(
             messages,
