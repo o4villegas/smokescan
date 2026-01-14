@@ -20,9 +20,11 @@ export async function handleHealth(c: Context<{ Bindings: WorkerEnv }>) {
     version: '1.0.1',
   };
 
-  // Check RunPod configuration
+  // Check RunPod configuration (split endpoints)
   checks.services.runpod = !!(
-    c.env.RUNPOD_API_KEY && c.env.RUNPOD_VISION_ENDPOINT_ID
+    c.env.RUNPOD_API_KEY &&
+    c.env.RUNPOD_RETRIEVAL_ENDPOINT_ID &&
+    c.env.RUNPOD_ANALYSIS_ENDPOINT_ID
   );
 
   // Check AI binding

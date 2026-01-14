@@ -2,8 +2,9 @@
  * Assessment Route Handler
  * POST /api/assess - Submit images for FDAM assessment
  *
- * Architecture: Single-call pattern where the Qwen3-VL agent handles RAG internally.
- * The agent uses tool calling to query Cloudflare AI Search for FDAM methodology.
+ * Architecture: Split "Retrieve First, Reason Last" pattern
+ * 1. Retrieval endpoint: Embedding + Reranking for FDAM methodology
+ * 2. Analysis endpoint: Vision reasoning with Qwen3-VL-30B
  */
 
 import type { Context } from 'hono';
@@ -42,15 +43,16 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
 
   const { images, metadata } = parsed.data;
 
-  // Initialize services
+  // Initialize RunPod service with split endpoint configuration
   const runpod = new RunPodService({
     apiKey: c.env.RUNPOD_API_KEY,
-    endpointId: c.env.RUNPOD_VISION_ENDPOINT_ID,
+    retrievalEndpointId: c.env.RUNPOD_RETRIEVAL_ENDPOINT_ID,
+    analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
   });
 
   const session = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
 
-  // Single call to agent - it handles RAG internally via tool calling
+  // Call split architecture: Retrieve First, Reason Last
   const assessResult = await runpod.assess(images, metadata);
   if (!assessResult.success) {
     return c.json(

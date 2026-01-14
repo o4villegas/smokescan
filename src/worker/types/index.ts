@@ -183,12 +183,32 @@ export type ChatResponse = {
 // Cloudflare Worker environment bindings
 export type WorkerEnv = {
   RUNPOD_API_KEY: string;
-  RUNPOD_VISION_ENDPOINT_ID: string;
+  // Split endpoint architecture (Retrieve First, Reason Last)
+  RUNPOD_RETRIEVAL_ENDPOINT_ID: string;  // Embedding + Reranking (~32GB)
+  RUNPOD_ANALYSIS_ENDPOINT_ID: string;   // Vision reasoning (~40GB)
+  // Cloudflare bindings
   SMOKESCAN_SESSIONS: KVNamespace;
   SMOKESCAN_DB: D1Database;
   SMOKESCAN_IMAGES: R2Bucket;
   SMOKESCAN_REPORTS: R2Bucket;
   AI: Ai;
+};
+
+// Retrieval endpoint response types
+export type RetrievalChunk = {
+  text: string;
+  source: string;
+  score: number;
+  doc_type?: 'primary' | 'reference';
+};
+
+export type RetrievalResult = {
+  query: string;
+  chunks: RetrievalChunk[] | string; // string for formatted output
+};
+
+export type RetrievalOutput = {
+  results: RetrievalResult[];
 };
 
 // ============ Database Entity Types ============

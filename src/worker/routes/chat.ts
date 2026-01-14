@@ -2,7 +2,7 @@
  * Chat Route Handler
  * POST /api/chat - Send follow-up questions about an assessment
  *
- * Architecture: The agent handles RAG internally via tool calling.
+ * Architecture: Split "Retrieve First, Reason Last" pattern
  * Session context provides previous assessment data for grounded responses.
  */
 
@@ -53,8 +53,7 @@ export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
 
   const session = sessionResult.data;
 
-  // Build session context for the agent
-  // The agent can use rag_search tool for additional methodology lookups
+  // Build session context for the analysis endpoint
   const sessionContext = `
 ## Assessment Summary
 - Room Type: ${session.metadata.roomType}
@@ -78,12 +77,14 @@ ${session.report.fdamRecommendations.slice(0, 5).map((r) => `- ${r}`).join('\n')
     { role: 'user' as const, content: message },
   ];
 
-  // Get chat response from agent
+  // Initialize RunPod service with split endpoint configuration
   const runpod = new RunPodService({
     apiKey: c.env.RUNPOD_API_KEY,
-    endpointId: c.env.RUNPOD_VISION_ENDPOINT_ID,
+    retrievalEndpointId: c.env.RUNPOD_RETRIEVAL_ENDPOINT_ID,
+    analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
   });
 
+  // Call split architecture: Retrieve First, Reason Last
   const chatResult = await runpod.chat(conversationHistory, sessionContext);
 
   if (!chatResult.success) {

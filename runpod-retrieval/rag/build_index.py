@@ -49,12 +49,13 @@ def build_index(
     """Build FAISS index from markdown documents."""
 
     # Load embedding model using official Qwen3VLEmbedder
+    # Per official RAG example: documents use default instruction ("Represent the user's input.")
     print(f"Loading embedding model: {model_name}")
     embedder = Qwen3VLEmbedder(
         model_name_or_path=model_name,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         # Note: Using default attention (SDPA on PyTorch 2.4+)
-        default_instruction="Represent this fire damage assessment methodology."
+        # No custom instruction for documents - per official Qwen3-VL-Embedding RAG pattern
     )
 
     # Collect all chunks from markdown files

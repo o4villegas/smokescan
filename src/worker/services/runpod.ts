@@ -1,16 +1,24 @@
 /**
  * RunPod Service
- * Handles communication with the Qwen3-VL agent endpoint
+ * Handles communication with RunPod endpoints using "Retrieve First, Reason Last" architecture
  *
- * Architecture: Single-call pattern where the agent handles RAG internally via tool calling.
- * The agent uses the rag_search tool to query Cloudflare AI Search REST API for FDAM methodology.
+ * Split Endpoints:
+ * - Retrieval: Embedding + Reranking (~32GB VRAM)
+ * - Analysis: Vision reasoning with Qwen3-VL-30B (~40GB VRAM)
  */
 
-import type { Result, ApiError, ApiErrorCode, AssessmentMetadata } from '../types';
+import type {
+  Result,
+  ApiError,
+  ApiErrorCode,
+  AssessmentMetadata,
+  RetrievalOutput,
+} from '../types';
 
 type RunPodConfig = {
   apiKey: string;
-  endpointId: string;
+  retrievalEndpointId: string;
+  analysisEndpointId: string;
 };
 
 type RunPodResponse = {
@@ -30,32 +38,168 @@ function stripThinkBlocks(text: string): string {
 
 export class RunPodService {
   private config: RunPodConfig;
-  private baseUrl: string;
 
   constructor(config: RunPodConfig) {
     this.config = config;
-    this.baseUrl = `https://api.runpod.ai/v2/${config.endpointId}`;
   }
 
   /**
    * Generate FDAM assessment report from images.
    *
-   * Uses single-call architecture where the Qwen3-VL agent:
-   * 1. Analyzes images for fire damage
-   * 2. Calls RAG tool to retrieve FDAM methodology
-   * 3. Generates grounded assessment report
-   *
-   * RAG is handled internally by the agent via tool calling.
+   * Flow (Retrieve First, Reason Last):
+   * 1. Build FDAM-specific queries based on metadata
+   * 2. Call Retrieval endpoint to get methodology context
+   * 3. Format RAG context from retrieval results
+   * 4. Call Analysis endpoint with images + pre-fetched context
    */
   async assess(
     images: string[],
     metadata: AssessmentMetadata
   ): Promise<Result<string, ApiError>> {
+    // Step 1: Build FDAM-specific queries based on metadata
+    const queries = this.buildFDAMQueries(metadata);
+
+    // Step 2: Call Retrieval endpoint
+    console.log(`[Split] Calling Retrieval endpoint with ${queries.length} queries`);
+    const ragResult = await this.callRetrievalEndpoint(queries, 5);
+
+    // Step 3: Format RAG context (graceful degradation if retrieval fails)
+    let ragContext: string;
+    if (ragResult.success) {
+      ragContext = this.formatRagContext(ragResult.data);
+      console.log(`[Split] Retrieved ${ragResult.data.results.length} query results`);
+    } else {
+      console.warn(`[Split] Retrieval failed: ${ragResult.error.message}`);
+      ragContext =
+        'FDAM methodology context unavailable. Use general fire damage assessment principles based on your training.';
+    }
+
+    // Step 4: Call Analysis endpoint with images + context
+    console.log(`[Split] Calling Analysis endpoint with ${images.length} images`);
+    return this.callAnalysisEndpoint(images, metadata, ragContext);
+  }
+
+  /**
+   * Chat completion for follow-up questions.
+   *
+   * Flow (Retrieve First, Reason Last):
+   * 1. Extract queries from user message
+   * 2. Call Retrieval endpoint for additional context
+   * 3. Call Analysis endpoint with conversation + context
+   */
+  async chat(
+    conversationHistory: Array<{ role: string; content: string }>,
+    sessionContext: string
+  ): Promise<Result<string, ApiError>> {
+    // Extract potential queries from the last user message
+    const lastUserMessage = conversationHistory.filter((m) => m.role === 'user').pop();
+    const queries = lastUserMessage
+      ? [
+          `FDAM methodology for: ${lastUserMessage.content.slice(0, 200)}`,
+          'Fire damage assessment disposition guidelines',
+        ]
+      : ['FDAM methodology general guidelines'];
+
+    // Get RAG context
+    const ragResult = await this.callRetrievalEndpoint(queries, 3);
+    const ragContext = ragResult.success
+      ? this.formatRagContext(ragResult.data)
+      : 'FDAM methodology context unavailable.';
+
+    // Call Analysis endpoint
+    return this.callAnalysisEndpointChat(conversationHistory, sessionContext, ragContext);
+  }
+
+  /**
+   * Build FDAM-specific queries based on assessment metadata
+   */
+  private buildFDAMQueries(metadata: AssessmentMetadata): string[] {
+    return [
+      `Zone classification criteria for ${metadata.structureType} fire damage assessment`,
+      `Threshold values for particulate contamination clearance in ${metadata.roomType}`,
+      `Cleaning protocols for ${metadata.roomType} surfaces after fire damage`,
+      'FDAM disposition guidelines for fire-damaged materials',
+      'Surface sampling requirements per FDAM methodology',
+    ];
+  }
+
+  /**
+   * Format RAG retrieval results into context string for Analysis endpoint
+   */
+  private formatRagContext(output: RetrievalOutput): string {
+    const sections: string[] = [];
+
+    for (const result of output.results) {
+      if (typeof result.chunks === 'string') {
+        // Already formatted string from handler
+        sections.push(result.chunks);
+      } else if (Array.isArray(result.chunks)) {
+        // Structured chunks - format them
+        for (const chunk of result.chunks) {
+          const source = chunk.doc_type === 'primary' ? '[FDAM]' : '[Reference]';
+          sections.push(`${source} ${chunk.source}:\n${chunk.text}`);
+        }
+      }
+    }
+
+    return sections.join('\n\n---\n\n');
+  }
+
+  /**
+   * Call the Retrieval endpoint to get FDAM methodology context
+   */
+  private async callRetrievalEndpoint(
+    queries: string[],
+    topK: number
+  ): Promise<Result<RetrievalOutput, ApiError>> {
+    const endpointUrl = `https://api.runpod.ai/v2/${this.config.retrievalEndpointId}`;
+
+    const requestBody = {
+      input: {
+        queries,
+        top_k: topK,
+      },
+    };
+
+    const result = await this.callEndpoint(endpointUrl, requestBody);
+    if (!result.success) {
+      return result;
+    }
+
+    const responseData = result.data as { output?: RetrievalOutput; error?: string };
+
+    if (responseData.error) {
+      return {
+        success: false,
+        error: { code: 500, message: 'Retrieval error', details: responseData.error },
+      };
+    }
+
+    if (!responseData.output) {
+      return {
+        success: false,
+        error: { code: 500, message: 'No output from Retrieval endpoint' },
+      };
+    }
+
+    return { success: true, data: responseData.output };
+  }
+
+  /**
+   * Call the Analysis endpoint with images and pre-fetched RAG context
+   */
+  private async callAnalysisEndpoint(
+    images: string[],
+    metadata: AssessmentMetadata,
+    ragContext: string
+  ): Promise<Result<string, ApiError>> {
+    const endpointUrl = `https://api.runpod.ai/v2/${this.config.analysisEndpointId}`;
+
     const userPrompt = `Analyze these ${images.length} images of a ${metadata.roomType} in a ${metadata.structureType} structure.
 ${metadata.fireOrigin ? `Fire origin information: ${metadata.fireOrigin}` : ''}
 ${metadata.notes ? `Additional notes: ${metadata.notes}` : ''}
 
-Generate a comprehensive FDAM assessment report. Use the rag_search tool to retrieve relevant methodology for your recommendations.`;
+Generate a comprehensive FDAM assessment report based on the methodology context provided.`;
 
     // Build message content with images
     const content: Array<{ type: string; text?: string; image?: string }> = [
@@ -73,11 +217,12 @@ Generate a comprehensive FDAM assessment report. Use the rag_search tool to retr
     const requestBody = {
       input: {
         messages: [{ role: 'user', content }],
+        rag_context: ragContext,
         max_tokens: 8000,
       },
     };
 
-    const result = await this.callEndpoint(requestBody);
+    const result = await this.callEndpoint(endpointUrl, requestBody);
     if (!result.success) {
       return result;
     }
@@ -87,7 +232,7 @@ Generate a comprehensive FDAM assessment report. Use the rag_search tool to retr
     if (responseData.error) {
       return {
         success: false,
-        error: { code: 500, message: 'Agent error', details: responseData.error },
+        error: { code: 500, message: 'Analysis error', details: responseData.error },
       };
     }
 
@@ -95,7 +240,7 @@ Generate a comprehensive FDAM assessment report. Use the rag_search tool to retr
     if (!rawContent) {
       return {
         success: false,
-        error: { code: 500, message: 'No content in agent response' },
+        error: { code: 500, message: 'No content in Analysis response' },
       };
     }
 
@@ -106,24 +251,25 @@ Generate a comprehensive FDAM assessment report. Use the rag_search tool to retr
   }
 
   /**
-   * Chat completion for follow-up questions.
-   *
-   * Uses the same agent architecture - the agent can call RAG tools
-   * to retrieve additional methodology context as needed.
+   * Call the Analysis endpoint for chat with pre-fetched RAG context
    */
-  async chat(
+  private async callAnalysisEndpointChat(
     conversationHistory: Array<{ role: string; content: string }>,
-    sessionContext: string
+    sessionContext: string,
+    ragContext: string
   ): Promise<Result<string, ApiError>> {
+    const endpointUrl = `https://api.runpod.ai/v2/${this.config.analysisEndpointId}`;
+
     const requestBody = {
       input: {
         messages: conversationHistory,
         session_context: sessionContext,
+        rag_context: ragContext,
         max_tokens: 4000,
       },
     };
 
-    const result = await this.callEndpoint(requestBody);
+    const result = await this.callEndpoint(endpointUrl, requestBody);
     if (!result.success) {
       return result;
     }
@@ -133,7 +279,7 @@ Generate a comprehensive FDAM assessment report. Use the rag_search tool to retr
     if (responseData.error) {
       return {
         success: false,
-        error: { code: 500, message: 'Agent error', details: responseData.error },
+        error: { code: 500, message: 'Chat error', details: responseData.error },
       };
     }
 
@@ -152,14 +298,15 @@ Generate a comprehensive FDAM assessment report. Use the rag_search tool to retr
   }
 
   /**
-   * Internal method to call RunPod endpoint with polling
+   * Internal method to call a RunPod endpoint with polling
    */
   private async callEndpoint(
+    endpointUrl: string,
     requestBody: unknown
   ): Promise<Result<unknown, ApiError>> {
     try {
       // Submit job
-      const submitResponse = await fetch(`${this.baseUrl}/run`, {
+      const submitResponse = await fetch(`${endpointUrl}/run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -182,7 +329,7 @@ Generate a comprehensive FDAM assessment report. Use the rag_search tool to retr
 
       const submitResult = (await submitResponse.json()) as RunPodResponse;
 
-      // If completed immediately (unlikely for large models)
+      // If completed immediately
       if (submitResult.status === 'COMPLETED') {
         return { success: true, data: submitResult.output };
       }
@@ -198,15 +345,15 @@ Generate a comprehensive FDAM assessment report. Use the rag_search tool to retr
         };
       }
 
-      // Poll for completion - agent may take longer due to tool calls
+      // Poll for completion
       const jobId = submitResult.id;
-      const maxAttempts = 120; // 10 minutes with 5s intervals (agent may make multiple tool calls)
+      const maxAttempts = 120; // 10 minutes with 5s intervals
       const pollInterval = 5000;
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, pollInterval));
 
-        const statusResponse = await fetch(`${this.baseUrl}/status/${jobId}`, {
+        const statusResponse = await fetch(`${endpointUrl}/status/${jobId}`, {
           headers: {
             Authorization: `Bearer ${this.config.apiKey}`,
           },

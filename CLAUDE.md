@@ -420,9 +420,10 @@ Image processing workflows will use RunPod serverless endpoints.
 
 **Environment Variables (see `.env` file):**
 - `RUNPOD_API_KEY` - API key for RunPod authentication
-- `RUNPOD_VISION_ENDPOINT_ID` - Endpoint for Qwen3-VL vision model
-- `RUNPOD_EMBEDDING_ENDPOINT_ID` - Endpoint for embedding model
-- `RUNPOD_RERANKER_ENDPOINT_ID` - Endpoint for reranker model
+- `RUNPOD_RETRIEVAL_ENDPOINT_ID` - Retrieval endpoint (Embedding + Reranking, ~32GB VRAM)
+- `RUNPOD_ANALYSIS_ENDPOINT_ID` - Analysis endpoint (Vision reasoning, ~40GB VRAM)
+
+**Architecture:** "Retrieve First, Reason Last" - split endpoints for better scaling and cost efficiency.
 
 **Note:** `.env` is gitignored. Use `.env.example` as template.
 

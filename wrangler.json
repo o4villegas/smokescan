@@ -17,7 +17,8 @@
 		"not_found_handling": "single-page-application"
 	},
 	"vars": {
-		"RUNPOD_VISION_ENDPOINT_ID": "1euqmegg0gmjfu"
+		"RUNPOD_RETRIEVAL_ENDPOINT_ID": "247a9nghlzoezm",
+		"RUNPOD_ANALYSIS_ENDPOINT_ID": "mooeb2rzvifn0q"
 	},
 	"kv_namespaces": [
 		{
