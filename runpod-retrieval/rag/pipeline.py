@@ -99,7 +99,7 @@ class LocalRAGPipeline:
             batch = all_chunks[i:i + batch_size]
             inputs = [{"text": c["text"]} for c in batch]
             batch_embeddings = self.embedder.process(inputs)
-            embeddings.append(batch_embeddings.cpu().numpy())
+            embeddings.append(batch_embeddings.cpu().float().numpy())  # Convert bfloat16 → float32
             print(f"Embedded {min(i + batch_size, len(all_chunks))}/{len(all_chunks)}")
 
         embeddings_array = np.vstack(embeddings).astype('float32')
