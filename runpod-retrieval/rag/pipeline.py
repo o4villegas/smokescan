@@ -123,7 +123,7 @@ class LocalRAGPipeline:
         """Embed list of texts using Qwen3VLEmbedder."""
         inputs = [{"text": t, "instruction": instruction} for t in texts]
         embeddings = self.embedder.process(inputs)
-        return embeddings.cpu().numpy().astype('float32')
+        return embeddings.cpu().float().numpy()  # Convert bfloat16 → float32
 
     def retrieve(self, query: str, top_k: int = 20) -> list:
         """Retrieve top-k chunks from FAISS index."""

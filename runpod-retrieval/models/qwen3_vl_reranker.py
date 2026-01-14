@@ -3,7 +3,6 @@ import numpy as np
 import logging
 
 from PIL import Image
-from scipy import special
 from typing import List
 from qwen_vl_utils import process_vision_info
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
@@ -105,7 +104,7 @@ class Qwen3VLReranker():
     def compute_scores(self, inputs):
         batch_scores = self.model(**inputs).last_hidden_state[:, -1]
         scores = self.score_linear(batch_scores)
-        scores = torch.sigmoid(scores).squeeze(-1).cpu().detach().tolist()
+        scores = torch.sigmoid(scores).squeeze(-1).cpu().float().detach().tolist()  # Convert bfloat16 → float32
         return scores
 
     def truncate_tokens_optimized(
@@ -201,7 +200,7 @@ class Qwen3VLReranker():
             if isinstance(video, list):
                 video_content = video
                 if self.num_frames is not None or self.max_frames is not None:
-                    video_content = self._sample_frames(video_content, self.num_frames, self.max_frames)
+                    video_content = sample_frames(video_content, self.num_frames, self.max_frames)
                 video_content = [
                     ('file://' + ele if isinstance(ele, str) else ele) 
                     for ele in video_content

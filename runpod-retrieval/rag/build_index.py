@@ -86,7 +86,7 @@ def build_index(
 
         # Get embeddings (returns normalized by default)
         batch_embeddings = embedder.process(inputs)
-        embeddings.append(batch_embeddings.cpu().numpy())
+        embeddings.append(batch_embeddings.cpu().float().numpy())  # Convert bfloat16 → float32
 
         print(f"Embedded {min(i + batch_size, len(all_chunks))}/{len(all_chunks)}")
 
