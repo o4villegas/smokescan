@@ -126,6 +126,43 @@ export class StorageService {
     }
   }
 
+  /**
+   * Generate a data URI for an image that external services can use.
+   * Returns base64 data URI format: "data:image/jpeg;base64,..."
+   *
+   * Note: For true presigned URLs with expiration, R2 S3 API credentials
+   * would be required. Data URIs work for our use case since the RunPod
+   * handler accepts them directly.
+   */
+  async getSignedUrl(
+    key: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _expirationSeconds = 900
+  ): Promise<Result<string, ApiError>> {
+    try {
+      const object = await this.imagesBucket.get(key);
+
+      if (!object) {
+        return { success: false, error: { code: 404, message: 'Image not found' } };
+      }
+
+      const arrayBuffer = await object.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+
+      const contentType = object.httpMetadata?.contentType ?? 'image/jpeg';
+      const dataUri = `data:${contentType};base64,${base64}`;
+
+      return { success: true, data: dataUri };
+    } catch (e) {
+      return {
+        success: false,
+        error: { code: 500, message: 'Failed to generate signed URL', details: String(e) },
+      };
+    }
+  }
+
   // ============ Report Operations ============
 
   async uploadReport(

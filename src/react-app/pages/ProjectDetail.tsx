@@ -6,6 +6,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { ProjectWithAssessments, RoomType } from '../types';
+import { RoomForm, type RoomFormData } from '../components/room';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Trash2, ArrowLeft, MapPin, User } from 'lucide-react';
 
 const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   'residential-bedroom': 'Bedroom',
@@ -24,6 +29,7 @@ type ProjectDetailState = {
   isLoading: boolean;
   error: string | null;
   showAddRoom: boolean;
+  isCreatingRoom: boolean;
 };
 
 export function ProjectDetail() {
@@ -34,11 +40,7 @@ export function ProjectDetail() {
     isLoading: true,
     error: null,
     showAddRoom: false,
-  });
-
-  const [newRoom, setNewRoom] = useState({
-    room_type: 'residential-living' as RoomType,
-    room_name: '',
+    isCreatingRoom: false,
   });
 
   const fetchProject = useCallback(async () => {
@@ -63,28 +65,28 @@ export function ProjectDetail() {
     fetchProject();
   }, [fetchProject]);
 
-  const handleAddRoom = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddRoom = async (data: RoomFormData) => {
     if (!id) return;
 
-    setState((prev) => ({ ...prev, isLoading: true }));
+    setState((prev) => ({ ...prev, isCreatingRoom: true }));
 
     try {
       const response = await fetch(`/api/projects/${id}/assessments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRoom),
+        body: JSON.stringify(data),
       });
       const result = await response.json();
 
       if (result.success) {
+        setState((prev) => ({ ...prev, showAddRoom: false, isCreatingRoom: false }));
         // Navigate to the new assessment wizard
         navigate(`/projects/${id}/assess/${result.data.id}`);
       } else {
-        setState((prev) => ({ ...prev, error: result.error.message, isLoading: false }));
+        setState((prev) => ({ ...prev, error: result.error.message, isCreatingRoom: false }));
       }
     } catch {
-      setState((prev) => ({ ...prev, error: 'Failed to create assessment', isLoading: false }));
+      setState((prev) => ({ ...prev, error: 'Failed to create assessment', isCreatingRoom: false }));
     }
   };
 
@@ -109,19 +111,22 @@ export function ProjectDetail() {
 
   if (state.isLoading) {
     return (
-      <div className="project-detail">
-        <div className="loading">Loading project...</div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-muted-foreground">Loading project...</div>
       </div>
     );
   }
 
   if (!state.project) {
     return (
-      <div className="project-detail">
-        <div className="error-state">
-          <p>Project not found</p>
-          <Link to="/" className="primary-btn">Back to Projects</Link>
-        </div>
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <p className="text-muted-foreground">Project not found</p>
+        <Link to="/">
+          <Button variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Projects
+          </Button>
+        </Link>
       </div>
     );
   }
@@ -129,134 +134,133 @@ export function ProjectDetail() {
   const { project } = state;
 
   return (
-    <div className="project-detail">
-      <div className="breadcrumb">
-        <Link to="/">Projects</Link> / {project.name}
+    <div className="space-y-6">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link to="/" className="hover:text-foreground transition-colors">Projects</Link>
+        <span>/</span>
+        <span className="text-foreground">{project.name}</span>
       </div>
 
+      {/* Error Banner */}
       {state.error && (
-        <div className="error-banner">
+        <div className="flex items-center justify-between rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-destructive">
           <span>{state.error}</span>
-          <button onClick={() => setState((prev) => ({ ...prev, error: null }))}>×</button>
-        </div>
-      )}
-
-      <div className="project-header">
-        <div>
-          <h2>{project.name}</h2>
-          <p className="project-address">{project.address}</p>
-          {project.client_name && <p className="project-client">Client: {project.client_name}</p>}
-        </div>
-        <div className="header-actions">
           <button
-            className="primary-btn"
-            onClick={() => setState((prev) => ({ ...prev, showAddRoom: true }))}
+            onClick={() => setState((prev) => ({ ...prev, error: null }))}
+            className="hover:bg-destructive/20 rounded p-1"
           >
-            + Add Room
+            ×
           </button>
-          <button className="secondary-btn danger" onClick={handleDeleteProject}>
-            Delete Project
-          </button>
-        </div>
-      </div>
-
-      {project.notes && (
-        <div className="project-notes">
-          <h3>Notes</h3>
-          <p>{project.notes}</p>
         </div>
       )}
 
-      {state.showAddRoom && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3>Add Room Assessment</h3>
-              <button
-                className="close-btn"
-                onClick={() => setState((prev) => ({ ...prev, showAddRoom: false }))}
-              >
-                ×
-              </button>
+      {/* Project Header Card */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0">
+          <div className="space-y-1">
+            <CardTitle className="text-2xl">{project.name}</CardTitle>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <MapPin className="h-4 w-4" />
+              <span>{project.address}</span>
             </div>
-            <form onSubmit={handleAddRoom}>
-              <div className="form-group">
-                <label htmlFor="room_type">Room Type *</label>
-                <select
-                  id="room_type"
-                  value={newRoom.room_type}
-                  onChange={(e) => setNewRoom((prev) => ({ ...prev, room_type: e.target.value as RoomType }))}
-                  required
-                >
-                  {Object.entries(ROOM_TYPE_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
+            {project.client_name && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <User className="h-4 w-4" />
+                <span>{project.client_name}</span>
               </div>
-              <div className="form-group">
-                <label htmlFor="room_name">Room Name (Optional)</label>
-                <input
-                  type="text"
-                  id="room_name"
-                  value={newRoom.room_name}
-                  onChange={(e) => setNewRoom((prev) => ({ ...prev, room_name: e.target.value }))}
-                  placeholder="e.g., Master Bedroom, Kitchen #1"
-                />
-              </div>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="secondary-btn"
-                  onClick={() => setState((prev) => ({ ...prev, showAddRoom: false }))}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="primary-btn" disabled={state.isLoading}>
-                  {state.isLoading ? 'Creating...' : 'Start Assessment'}
-                </button>
-              </div>
-            </form>
+            )}
           </div>
-        </div>
-      )}
+          <div className="flex gap-2">
+            <Button onClick={() => setState((prev) => ({ ...prev, showAddRoom: true }))}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Room
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteProject}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </Button>
+          </div>
+        </CardHeader>
+        {project.notes && (
+          <CardContent>
+            <div className="rounded-lg bg-muted/50 p-3">
+              <p className="text-sm font-medium mb-1">Notes</p>
+              <p className="text-sm text-muted-foreground">{project.notes}</p>
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
-      <div className="assessments-section">
-        <h3>Assessments ({project.assessments.length})</h3>
+      {/* Room Form Dialog */}
+      <RoomForm
+        open={state.showAddRoom}
+        onOpenChange={(open) => setState((prev) => ({ ...prev, showAddRoom: open }))}
+        onSubmit={handleAddRoom}
+        isLoading={state.isCreatingRoom}
+      />
+
+      {/* Assessments Section */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">
+          Assessments ({project.assessments.length})
+        </h3>
 
         {project.assessments.length === 0 ? (
-          <div className="empty-state">
-            <p>No assessments yet. Add a room to start an assessment.</p>
-          </div>
-        ) : (
-          <div className="assessment-list">
-            {project.assessments.map((assessment) => (
-              <Link
-                key={assessment.id}
-                to={`/assessments/${assessment.id}`}
-                className="assessment-card"
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-muted-foreground mb-4">
+                No assessments yet. Add a room to start an assessment.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => setState((prev) => ({ ...prev, showAddRoom: true }))}
               >
-                <div className="assessment-info">
-                  <h4>{assessment.room_name || ROOM_TYPE_LABELS[assessment.room_type]}</h4>
-                  <span className={`phase-badge ${assessment.phase.toLowerCase()}`}>
-                    {assessment.phase}
-                  </span>
-                  <span className={`status-badge ${assessment.status}`}>
-                    {assessment.status.replace('-', ' ')}
-                  </span>
-                </div>
-                {assessment.zone_classification && (
-                  <span className={`zone-badge ${assessment.zone_classification}`}>
-                    {assessment.zone_classification.replace('-', ' ')}
-                  </span>
-                )}
-                {assessment.overall_severity && (
-                  <span className={`severity-badge ${assessment.overall_severity}`}>
-                    {assessment.overall_severity}
-                  </span>
-                )}
-                <p className="assessment-date">
-                  {new Date(assessment.updated_at).toLocaleDateString()}
-                </p>
+                <Plus className="mr-2 h-4 w-4" />
+                Add First Room
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {project.assessments.map((assessment) => (
+              <Link key={assessment.id} to={`/assessments/${assessment.id}`}>
+                <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between">
+                      <h4 className="font-medium">
+                        {assessment.room_name || ROOM_TYPE_LABELS[assessment.room_type]}
+                      </h4>
+                      <Badge variant="secondary">{assessment.phase}</Badge>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline">
+                        {assessment.status.replace('-', ' ')}
+                      </Badge>
+                      {assessment.zone_classification && (
+                        <Badge variant={assessment.zone_classification as 'burn' | 'near-field' | 'far-field'}>
+                          {assessment.zone_classification.replace('-', ' ')}
+                        </Badge>
+                      )}
+                      {assessment.overall_severity && (
+                        <Badge variant={assessment.overall_severity as 'heavy' | 'moderate' | 'light' | 'trace' | 'none'}>
+                          {assessment.overall_severity}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {assessment.dimensions && (
+                      <p className="text-xs text-muted-foreground">
+                        {assessment.dimensions.area_sf} SF · {assessment.dimensions.volume_cf} CF
+                      </p>
+                    )}
+
+                    <p className="text-xs text-muted-foreground">
+                      Updated {new Date(assessment.updated_at).toLocaleDateString()}
+                    </p>
+                  </CardContent>
+                </Card>
               </Link>
             ))}
           </div>

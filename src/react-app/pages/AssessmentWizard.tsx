@@ -162,23 +162,32 @@ export function AssessmentWizard() {
   };
 
   return (
-    <div className="assessment-wizard">
-      <div className="breadcrumb">
-        <Link to="/">Projects</Link>
+    <div className="space-y-6">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link to="/" className="hover:text-foreground transition-colors">Projects</Link>
         {projectId && (
           <>
-            {' / '}
-            <Link to={`/projects/${projectId}`}>Project</Link>
+            <span>/</span>
+            <Link to={`/projects/${projectId}`} className="hover:text-foreground transition-colors">
+              Project
+            </Link>
           </>
         )}
-        {' / '}
-        New Assessment
+        <span>/</span>
+        <span className="text-foreground">New Assessment</span>
       </div>
 
+      {/* Error Banner */}
       {state.error && (
-        <div className="error-banner">
+        <div className="flex items-center justify-between rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-destructive">
           <span>{state.error}</span>
-          <button onClick={() => updateState({ error: null })}>×</button>
+          <button
+            onClick={() => updateState({ error: null })}
+            className="hover:bg-destructive/20 rounded p-1"
+          >
+            ×
+          </button>
         </div>
       )}
 

@@ -51,6 +51,26 @@ export type RoomType =
   | 'industrial-manufacturing'
   | 'other';
 
+// Floor level for building position context
+export type FloorLevel = 'basement' | 'ground' | '1st' | '2nd' | '3rd' | '4th+' | 'attic';
+
+// Room dimensions with auto-calculated fields
+export type RoomDimensions = {
+  length_ft: number;
+  width_ft: number;
+  height_ft: number;
+  area_sf: number;      // length × width (auto-calculated)
+  volume_cf: number;    // area × height (auto-calculated)
+};
+
+// Sensory observations - inputs that CANNOT be determined by photo analysis
+// Visual observations (soot/char/ash) are handled by VisionAnalysisOutput
+export type SensoryObservations = {
+  smoke_odor_present: boolean;
+  smoke_odor_intensity?: 'faint' | 'noticeable' | 'strong';
+  white_wipe_result?: 'not-performed' | 'clean' | 'light-deposits' | 'heavy-deposits';
+};
+
 export type StructureType =
   | 'single-family'
   | 'multi-family'
@@ -244,6 +264,10 @@ export type Assessment = {
   overall_severity?: Severity;
   confidence_score?: number;
   executive_summary?: string;
+  // FDAM fields (human inputs that cannot be determined by photo analysis)
+  floor_level?: FloorLevel;
+  dimensions?: RoomDimensions;
+  sensory_observations?: SensoryObservations;
   created_at: string;
   updated_at: string;
 };
@@ -322,6 +346,10 @@ export type CreateAssessmentInput = {
   project_id: string;
   room_type: RoomType;
   room_name?: string;
+  // FDAM fields (human inputs)
+  floor_level?: FloorLevel;
+  dimensions?: RoomDimensions;
+  sensory_observations?: SensoryObservations;
 };
 
 export type UpdateAssessmentInput = {
@@ -331,6 +359,10 @@ export type UpdateAssessmentInput = {
   overall_severity?: Severity;
   confidence_score?: number;
   executive_summary?: string;
+  // FDAM fields (human inputs)
+  floor_level?: FloorLevel;
+  dimensions?: RoomDimensions;
+  sensory_observations?: SensoryObservations;
 };
 
 // ============ API Response Types ============

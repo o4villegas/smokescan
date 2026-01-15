@@ -28,6 +28,11 @@ type RunPodResponse = {
   error?: string;
 };
 
+export type EmbedResult = {
+  embeddings: number[][];
+  dimension: number;
+};
+
 /**
  * Strip <think>...</think> blocks from Qwen3-VL-Thinking model output.
  * The model outputs reasoning in these blocks, but they should not be shown to users.
@@ -108,6 +113,74 @@ export class RunPodService {
 
     // Call Analysis endpoint
     return this.callAnalysisEndpointChat(conversationHistory, sessionContext, ragContext);
+  }
+
+  /**
+   * Generate embeddings for images using Qwen3-VL-Embedding-8B.
+   *
+   * Calls the Retrieval endpoint with action: "embed"
+   * Returns 4096-dimensional vectors for each image.
+   *
+   * @param imageUrls - Array of image URLs or base64 data URIs
+   * @param instruction - Optional task instruction for the embedder
+   * @returns Embeddings and dimension info
+   */
+  async embed(
+    imageUrls: string[],
+    instruction?: string
+  ): Promise<Result<EmbedResult, ApiError>> {
+    const endpointUrl = `https://api.runpod.ai/v2/${this.config.retrievalEndpointId}`;
+
+    const requestBody = {
+      input: {
+        action: 'embed',
+        images: imageUrls,
+        ...(instruction && { instruction }),
+      },
+    };
+
+    console.log(`[embed] Calling Retrieval endpoint with ${imageUrls.length} images`);
+
+    const result = await this.callEndpoint(endpointUrl, requestBody);
+    if (!result.success) {
+      return result;
+    }
+
+    const responseData = result.data as {
+      output?: { embeddings: number[][]; dimension: number };
+      error?: string;
+      traceback?: string;
+    };
+
+    if (responseData.error) {
+      return {
+        success: false,
+        error: {
+          code: 500,
+          message: 'Embedding error',
+          details: responseData.traceback || responseData.error,
+        },
+      };
+    }
+
+    if (!responseData.output?.embeddings) {
+      return {
+        success: false,
+        error: { code: 500, message: 'No embeddings in response' },
+      };
+    }
+
+    console.log(
+      `[embed] Generated ${responseData.output.embeddings.length} embeddings of dimension ${responseData.output.dimension}`
+    );
+
+    return {
+      success: true,
+      data: {
+        embeddings: responseData.output.embeddings,
+        dimension: responseData.output.dimension,
+      },
+    };
   }
 
   /**

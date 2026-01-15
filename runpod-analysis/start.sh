@@ -36,8 +36,8 @@ python -m vllm.entrypoints.openai.api_server \
     --port $VLLM_PORT \
     --trust-remote-code \
     --dtype auto \
-    --max-model-len 8192 \
-    --gpu-memory-utilization 0.85 &
+    --max-model-len 32768 \
+    --gpu-memory-utilization 0.9 &
 
 VLLM_PID=$!
 echo "vLLM server PID: $VLLM_PID"

@@ -7,6 +7,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ChatInterface } from '../components';
 import type { AssessmentWithDetails, RoomType, ChatMessage } from '../types';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ArrowLeft, Trash2, Image, AlertTriangle, ListOrdered, MessageSquare } from 'lucide-react';
 
 const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   'residential-bedroom': 'Bedroom',
@@ -138,19 +143,22 @@ export function AssessmentView() {
 
   if (state.isLoading && !state.assessment) {
     return (
-      <div className="assessment-view">
-        <div className="loading">Loading assessment...</div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-muted-foreground">Loading assessment...</div>
       </div>
     );
   }
 
   if (!state.assessment) {
     return (
-      <div className="assessment-view">
-        <div className="error-state">
-          <p>Assessment not found</p>
-          <Link to="/" className="primary-btn">Back to Projects</Link>
-        </div>
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <p className="text-muted-foreground">Assessment not found</p>
+        <Link to="/">
+          <Button variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Projects
+          </Button>
+        </Link>
       </div>
     );
   }
@@ -158,164 +166,229 @@ export function AssessmentView() {
   const { assessment } = state;
 
   return (
-    <div className="assessment-view">
-      <div className="breadcrumb">
-        <Link to="/">Projects</Link>
-        {' / '}
-        <Link to={`/projects/${assessment.project_id}`}>Project</Link>
-        {' / '}
-        {assessment.room_name || ROOM_TYPE_LABELS[assessment.room_type]}
+    <div className="space-y-6">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link to="/" className="hover:text-foreground transition-colors">Projects</Link>
+        <span>/</span>
+        <Link to={`/projects/${assessment.project_id}`} className="hover:text-foreground transition-colors">
+          Project
+        </Link>
+        <span>/</span>
+        <span className="text-foreground">
+          {assessment.room_name || ROOM_TYPE_LABELS[assessment.room_type]}
+        </span>
       </div>
 
+      {/* Error Banner */}
       {state.error && (
-        <div className="error-banner">
+        <div className="flex items-center justify-between rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-destructive">
           <span>{state.error}</span>
-          <button onClick={() => setState((prev) => ({ ...prev, error: null }))}>×</button>
+          <button
+            onClick={() => setState((prev) => ({ ...prev, error: null }))}
+            className="hover:bg-destructive/20 rounded p-1"
+          >
+            ×
+          </button>
         </div>
       )}
 
-      <div className="assessment-header">
-        <div>
-          <h2>{assessment.room_name || ROOM_TYPE_LABELS[assessment.room_type]}</h2>
-          <div className="badges">
-            <span className={`phase-badge ${assessment.phase.toLowerCase()}`}>
-              {assessment.phase}
-            </span>
-            <span className={`status-badge ${assessment.status}`}>
-              {assessment.status.replace('-', ' ')}
-            </span>
-            {assessment.zone_classification && (
-              <span className={`zone-badge ${assessment.zone_classification}`}>
-                {assessment.zone_classification.replace('-', ' ')}
-              </span>
-            )}
-            {assessment.overall_severity && (
-              <span className={`severity-badge ${assessment.overall_severity}`}>
-                {assessment.overall_severity}
-              </span>
-            )}
+      {/* Header Card */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0">
+          <div className="space-y-2">
+            <CardTitle className="text-2xl">
+              {assessment.room_name || ROOM_TYPE_LABELS[assessment.room_type]}
+            </CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">{assessment.phase}</Badge>
+              <Badge variant="outline">{assessment.status.replace('-', ' ')}</Badge>
+              {assessment.zone_classification && (
+                <Badge variant={assessment.zone_classification as 'burn' | 'near-field' | 'far-field'}>
+                  {assessment.zone_classification.replace('-', ' ')}
+                </Badge>
+              )}
+              {assessment.overall_severity && (
+                <Badge variant={assessment.overall_severity as 'heavy' | 'moderate' | 'light' | 'trace' | 'none'}>
+                  {assessment.overall_severity}
+                </Badge>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="header-actions">
-          <button
-            className={`tab-btn ${state.viewMode === 'details' ? 'active' : ''}`}
-            onClick={() => setState((prev) => ({ ...prev, viewMode: 'details' }))}
-          >
-            Details
-          </button>
-          <button
-            className={`tab-btn ${state.viewMode === 'chat' ? 'active' : ''}`}
-            onClick={() => setState((prev) => ({ ...prev, viewMode: 'chat' }))}
-            disabled={!state.sessionId}
-          >
-            Chat
-          </button>
-          <button className="secondary-btn danger" onClick={handleDelete}>
+          <Button variant="destructive" onClick={handleDelete}>
+            <Trash2 className="mr-2 h-4 w-4" />
             Delete
-          </button>
-        </div>
-      </div>
+          </Button>
+        </CardHeader>
+      </Card>
 
-      {state.viewMode === 'details' && (
-        <div className="assessment-details">
+      {/* Content Tabs */}
+      <Tabs defaultValue="details" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="chat" disabled={!state.sessionId}>
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Chat
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="details" className="space-y-4">
+          {/* Executive Summary */}
           {assessment.executive_summary && (
-            <div className="detail-section">
-              <h3>Executive Summary</h3>
-              <p>{assessment.executive_summary}</p>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Executive Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">{assessment.executive_summary}</p>
+              </CardContent>
+            </Card>
           )}
 
+          {/* Confidence Score */}
           {assessment.confidence_score !== undefined && (
-            <div className="detail-section">
-              <h3>Confidence Score</h3>
-              <div className="confidence-bar">
-                <div
-                  className="confidence-fill"
-                  style={{ width: `${assessment.confidence_score * 100}%` }}
-                />
-                <span>{Math.round(assessment.confidence_score * 100)}%</span>
-              </div>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Confidence Score</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="relative h-4 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-primary rounded-full transition-all"
+                    style={{ width: `${assessment.confidence_score * 100}%` }}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {Math.round(assessment.confidence_score * 100)}% confidence
+                </p>
+              </CardContent>
+            </Card>
           )}
 
-          <div className="detail-section">
-            <h3>Images ({assessment.images.length})</h3>
-            {assessment.images.length === 0 ? (
-              <p className="empty-text">No images uploaded</p>
-            ) : (
-              <div className="image-grid">
-                {assessment.images.map((img) => (
-                  <div key={img.id} className="image-item">
-                    <img src={`/api/images/${img.r2_key}`} alt={img.filename} />
-                    <span className="image-filename">{img.filename}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="detail-section">
-            <h3>Damage Items ({assessment.damage_items.length})</h3>
-            {assessment.damage_items.length === 0 ? (
-              <p className="empty-text">No damage items recorded</p>
-            ) : (
-              <div className="damage-list">
-                {assessment.damage_items.map((item) => (
-                  <div key={item.id} className="damage-item">
-                    <div className="damage-header">
-                      <span className="damage-type">{item.damage_type.replace('_', ' ')}</span>
-                      <span className={`severity-badge ${item.severity}`}>{item.severity}</span>
+          {/* Images */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Image className="h-5 w-5" />
+                Images ({assessment.images.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {assessment.images.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No images uploaded</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {assessment.images.map((img) => (
+                    <div key={img.id} className="group relative aspect-square rounded-lg overflow-hidden bg-muted">
+                      <img
+                        src={`/api/images/${img.r2_key}`}
+                        alt={img.filename}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                        <span className="text-xs text-white truncate">{img.filename}</span>
+                      </div>
                     </div>
-                    <p className="damage-location">{item.location}</p>
-                    {item.material && <p className="damage-material">Material: {item.material}</p>}
-                    {item.disposition && (
-                      <span className={`disposition-badge ${item.disposition}`}>
-                        {item.disposition}
-                      </span>
-                    )}
-                    {item.notes && <p className="damage-notes">{item.notes}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {assessment.restoration_priorities.length > 0 && (
-            <div className="detail-section">
-              <h3>Restoration Priorities</h3>
-              <table className="priority-table">
-                <thead>
-                  <tr>
-                    <th>Priority</th>
-                    <th>Area</th>
-                    <th>Action</th>
-                    <th>Rationale</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assessment.restoration_priorities.map((p) => (
-                    <tr key={p.id}>
-                      <td className="priority-cell">{p.priority}</td>
-                      <td>{p.area}</td>
-                      <td>{p.action}</td>
-                      <td>{p.rationale || '-'}</td>
-                    </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {state.viewMode === 'chat' && state.sessionId && (
-        <ChatInterface
-          messages={state.chatHistory}
-          onSendMessage={handleChatMessage}
-          onBack={() => setState((prev) => ({ ...prev, viewMode: 'details' }))}
-          isLoading={state.isLoading}
-        />
-      )}
+          {/* Damage Items */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                Damage Items ({assessment.damage_items.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {assessment.damage_items.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No damage items recorded</p>
+              ) : (
+                <div className="space-y-3">
+                  {assessment.damage_items.map((item) => (
+                    <div key={item.id} className="rounded-lg border p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium capitalize">
+                          {item.damage_type.replace('_', ' ')}
+                        </span>
+                        <Badge variant={item.severity as 'heavy' | 'moderate' | 'light' | 'trace' | 'none'}>
+                          {item.severity}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{item.location}</p>
+                      {item.material && (
+                        <p className="text-sm text-muted-foreground">Material: {item.material}</p>
+                      )}
+                      {item.disposition && (
+                        <Badge variant="outline" className="capitalize">
+                          {item.disposition}
+                        </Badge>
+                      )}
+                      {item.notes && (
+                        <p className="text-sm text-muted-foreground italic">{item.notes}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Restoration Priorities */}
+          {assessment.restoration_priorities.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ListOrdered className="h-5 w-5" />
+                  Restoration Priorities
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="pb-3 pr-4 font-medium text-muted-foreground">Priority</th>
+                        <th className="pb-3 pr-4 font-medium text-muted-foreground">Area</th>
+                        <th className="pb-3 pr-4 font-medium text-muted-foreground">Action</th>
+                        <th className="pb-3 font-medium text-muted-foreground">Rationale</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assessment.restoration_priorities.map((p) => (
+                        <tr key={p.id} className="border-b last:border-0">
+                          <td className="py-3 pr-4">
+                            <Badge variant="secondary" className="font-mono">
+                              #{p.priority}
+                            </Badge>
+                          </td>
+                          <td className="py-3 pr-4">{p.area}</td>
+                          <td className="py-3 pr-4">{p.action}</td>
+                          <td className="py-3 text-muted-foreground">{p.rationale || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="chat">
+          {state.sessionId && (
+            <ChatInterface
+              messages={state.chatHistory}
+              onSendMessage={handleChatMessage}
+              onBack={() => setState((prev) => ({ ...prev, viewMode: 'details' }))}
+              isLoading={state.isLoading}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

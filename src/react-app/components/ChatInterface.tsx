@@ -4,6 +4,11 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { ArrowLeft, Send, Loader2, MessageCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -47,70 +52,97 @@ export function ChatInterface({
   ];
 
   return (
-    <div className="chat-interface">
-      <div className="chat-header">
-        <button className="back-btn" onClick={onBack}>
-          ← Back to Report
-        </button>
-        <h2>Follow-up Questions</h2>
-      </div>
+    <Card className="flex flex-col h-[600px]">
+      <CardHeader className="flex flex-row items-center gap-4 space-y-0 border-b">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Report
+        </Button>
+        <CardTitle className="text-lg">Follow-up Questions</CardTitle>
+      </CardHeader>
 
-      <div className="messages-container">
+      <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+        {/* Welcome message when no messages */}
         {messages.length === 0 && (
-          <div className="chat-welcome">
-            <p>Ask questions about your assessment report.</p>
-            <div className="suggested-questions">
-              <p className="suggestions-label">Suggested questions:</p>
-              {suggestedQuestions.map((q, index) => (
-                <button
-                  key={index}
-                  className="suggestion-btn"
-                  onClick={() => setInput(q)}
-                >
-                  {q}
-                </button>
-              ))}
+          <div className="text-center py-8">
+            <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+            <p className="text-muted-foreground mb-6">
+              Ask questions about your assessment report.
+            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Suggested questions:</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {suggestedQuestions.map((q, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setInput(q)}
+                    className="text-left text-sm px-3 py-2 rounded-lg border border-border bg-muted/50 hover:bg-muted hover:border-primary/50 transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
+        {/* Messages */}
         {messages.map((message, index) => (
-          <div key={index} className={`message ${message.role}`}>
-            <div className="message-content">{message.content}</div>
+          <div
+            key={index}
+            className={cn(
+              'flex',
+              message.role === 'user' ? 'justify-end' : 'justify-start'
+            )}
+          >
+            <div
+              className={cn(
+                'max-w-[80%] rounded-lg px-4 py-2',
+                message.role === 'user'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted'
+              )}
+            >
+              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+            </div>
           </div>
         ))}
 
+        {/* Loading indicator */}
         {isLoading && (
-          <div className="message assistant loading">
-            <div className="message-content">
-              <span className="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
+          <div className="flex justify-start">
+            <div className="bg-muted rounded-lg px-4 py-3">
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" />
+              </div>
             </div>
           </div>
         )}
 
         <div ref={messagesEndRef} />
-      </div>
+      </CardContent>
 
-      <form className="chat-input-form" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask a question about your assessment..."
-          disabled={isLoading}
-        />
-        <button
-          type="submit"
-          className="send-btn"
-          disabled={!input.trim() || isLoading}
-        >
-          Send
-        </button>
-      </form>
-    </div>
+      {/* Input form */}
+      <div className="border-t p-4">
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask a question about your assessment..."
+            disabled={isLoading}
+            className="flex-1"
+          />
+          <Button type="submit" disabled={!input.trim() || isLoading}>
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </form>
+      </div>
+    </Card>
   );
 }

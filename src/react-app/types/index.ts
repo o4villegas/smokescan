@@ -29,6 +29,24 @@ export type Zone = 'burn' | 'near-field' | 'far-field';
 export type Phase = 'PRE' | 'PRA' | 'RESTORATION' | 'PRV';
 export type AssessmentStatus = 'draft' | 'in-progress' | 'awaiting-lab' | 'pra-ready' | 'completed';
 export type Disposition = 'clean' | 'remove' | 'no-action' | 'further-assessment';
+
+// FDAM fields (human inputs that cannot be determined by photo analysis)
+export type FloorLevel = 'basement' | 'ground' | '1st' | '2nd' | '3rd' | '4th+' | 'attic';
+
+export type RoomDimensions = {
+  length_ft: number;
+  width_ft: number;
+  height_ft: number;
+  area_sf: number;      // length × width (auto-calculated)
+  volume_cf: number;    // area × height (auto-calculated)
+};
+
+// Sensory observations - inputs that CANNOT be determined by photo analysis
+export type SensoryObservations = {
+  smoke_odor_present: boolean;
+  smoke_odor_intensity?: 'faint' | 'noticeable' | 'strong';
+  white_wipe_result?: 'not-performed' | 'clean' | 'light-deposits' | 'heavy-deposits';
+};
 export type DamageType =
   | 'char_damage'
   | 'smoke_staining'
@@ -62,6 +80,10 @@ export type Assessment = {
   overall_severity?: Severity;
   confidence_score?: number;
   executive_summary?: string;
+  // FDAM fields (human inputs)
+  floor_level?: FloorLevel;
+  dimensions?: RoomDimensions;
+  sensory_observations?: SensoryObservations;
   created_at: string;
   updated_at: string;
 };
@@ -202,4 +224,27 @@ export const STRUCTURE_TYPE_OPTIONS: { value: StructureType; label: string }[] =
   { value: 'commercial', label: 'Commercial Building' },
   { value: 'industrial', label: 'Industrial Facility' },
   { value: 'mixed-use', label: 'Mixed-Use Building' },
+];
+
+export const FLOOR_LEVEL_OPTIONS: { value: FloorLevel; label: string }[] = [
+  { value: 'basement', label: 'Basement' },
+  { value: 'ground', label: 'Ground Floor' },
+  { value: '1st', label: '1st Floor' },
+  { value: '2nd', label: '2nd Floor' },
+  { value: '3rd', label: '3rd Floor' },
+  { value: '4th+', label: '4th Floor+' },
+  { value: 'attic', label: 'Attic' },
+];
+
+export const SMOKE_ODOR_INTENSITY_OPTIONS: { value: SensoryObservations['smoke_odor_intensity']; label: string }[] = [
+  { value: 'faint', label: 'Faint' },
+  { value: 'noticeable', label: 'Noticeable' },
+  { value: 'strong', label: 'Strong' },
+];
+
+export const WHITE_WIPE_RESULT_OPTIONS: { value: SensoryObservations['white_wipe_result']; label: string }[] = [
+  { value: 'not-performed', label: 'Not Performed' },
+  { value: 'clean', label: 'Clean' },
+  { value: 'light-deposits', label: 'Light Deposits' },
+  { value: 'heavy-deposits', label: 'Heavy Deposits' },
 ];

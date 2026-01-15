@@ -4,6 +4,10 @@
  */
 
 import type { AssessmentReport as ReportType } from '../types';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { MessageSquare, Plus, Clock, FileText, ListOrdered, CheckCircle } from 'lucide-react';
 
 type AssessmentReportProps = {
   report: ReportType;
@@ -19,97 +23,151 @@ export function AssessmentReport({
   onNewAssessment,
 }: AssessmentReportProps) {
   return (
-    <div className="assessment-report">
-      <div className="report-header">
-        <h2>FDAM Assessment Report</h2>
-        {processingTimeMs && (
-          <span className="processing-time">
-            Generated in {(processingTimeMs / 1000).toFixed(1)}s
-          </span>
-        )}
-      </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-2xl">FDAM Assessment Report</CardTitle>
+            {processingTimeMs && (
+              <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                Generated in {(processingTimeMs / 1000).toFixed(1)}s
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={onStartChat}>
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Ask Follow-up Questions
+            </Button>
+            <Button variant="outline" onClick={onNewAssessment}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Assessment
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
 
-      <section className="report-section">
-        <h3>Executive Summary</h3>
-        <p>{report.executiveSummary}</p>
-      </section>
+      {/* Executive Summary */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Executive Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground leading-relaxed">{report.executiveSummary}</p>
+        </CardContent>
+      </Card>
 
+      {/* Detailed Assessment */}
       {report.detailedAssessment.length > 0 && (
-        <section className="report-section">
-          <h3>Detailed Assessment</h3>
-          {report.detailedAssessment.map((item, index) => (
-            <div key={index} className="assessment-item">
-              <h4>
-                {item.area}
-                <span className={`severity-badge ${item.severity}`}>
-                  {item.severity}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Detailed Assessment</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {report.detailedAssessment.map((item, index) => (
+              <div key={index} className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold">{item.area}</h4>
+                  <Badge variant={item.severity as 'heavy' | 'moderate' | 'light' | 'trace' | 'none'}>
+                    {item.severity}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">{item.findings}</p>
+                {item.recommendations.length > 0 && (
+                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                    {item.recommendations.map((rec, i) => (
+                      <li key={i}>{rec}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* FDAM Recommendations */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <CheckCircle className="h-5 w-5" />
+            FDAM Recommendations
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-2">
+            {report.fdamRecommendations.map((rec, index) => (
+              <li key={index} className="flex items-start gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+                  {index + 1}
                 </span>
-              </h4>
-              <p>{item.findings}</p>
-              {item.recommendations.length > 0 && (
-                <ul>
-                  {item.recommendations.map((rec, i) => (
-                    <li key={i}>{rec}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </section>
-      )}
+                <span className="text-sm text-muted-foreground">{rec}</span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
 
-      <section className="report-section">
-        <h3>FDAM Recommendations</h3>
-        <ul className="recommendations-list">
-          {report.fdamRecommendations.map((rec, index) => (
-            <li key={index}>{rec}</li>
-          ))}
-        </ul>
-      </section>
-
+      {/* Restoration Priority Matrix */}
       {report.restorationPriority.length > 0 && (
-        <section className="report-section">
-          <h3>Restoration Priority Matrix</h3>
-          <table className="priority-table">
-            <thead>
-              <tr>
-                <th>Priority</th>
-                <th>Area</th>
-                <th>Action</th>
-                <th>Rationale</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.restorationPriority.map((item, index) => (
-                <tr key={index}>
-                  <td className="priority-cell">{item.priority}</td>
-                  <td>{item.area}</td>
-                  <td>{item.action}</td>
-                  <td>{item.rationale}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ListOrdered className="h-5 w-5" />
+              Restoration Priority Matrix
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Priority</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Area</th>
+                    <th className="pb-3 pr-4 font-medium text-muted-foreground">Action</th>
+                    <th className="pb-3 font-medium text-muted-foreground">Rationale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.restorationPriority.map((item, index) => (
+                    <tr key={index} className="border-b last:border-0">
+                      <td className="py-3 pr-4">
+                        <Badge variant="secondary" className="font-mono">
+                          #{item.priority}
+                        </Badge>
+                      </td>
+                      <td className="py-3 pr-4">{item.area}</td>
+                      <td className="py-3 pr-4">{item.action}</td>
+                      <td className="py-3 text-muted-foreground">{item.rationale}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      <section className="report-section">
-        <h3>Scope Indicators</h3>
-        <ul className="scope-list">
-          {report.scopeIndicators.map((indicator, index) => (
-            <li key={index}>{indicator}</li>
-          ))}
-        </ul>
-      </section>
-
-      <div className="report-actions">
-        <button className="primary-btn" onClick={onStartChat}>
-          Ask Follow-up Questions
-        </button>
-        <button className="secondary-btn" onClick={onNewAssessment}>
-          New Assessment
-        </button>
-      </div>
+      {/* Scope Indicators */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Scope Indicators</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {report.scopeIndicators.map((indicator, index) => (
+              <Badge key={index} variant="outline">
+                {indicator}
+              </Badge>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

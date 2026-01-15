@@ -24,6 +24,33 @@ import type {
   Disposition,
 } from '../types';
 
+// Raw database row type (JSON fields are strings)
+type AssessmentRow = Omit<Assessment, 'dimensions' | 'sensory_observations'> & {
+  dimensions_json: string | null;
+  sensory_observations_json: string | null;
+};
+
+// Helper to parse assessment from database row
+function parseAssessmentRow(row: AssessmentRow): Assessment {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    room_type: row.room_type,
+    room_name: row.room_name,
+    phase: row.phase,
+    status: row.status,
+    zone_classification: row.zone_classification,
+    overall_severity: row.overall_severity,
+    confidence_score: row.confidence_score,
+    executive_summary: row.executive_summary,
+    floor_level: row.floor_level,
+    dimensions: row.dimensions_json ? JSON.parse(row.dimensions_json) : undefined,
+    sensory_observations: row.sensory_observations_json ? JSON.parse(row.sensory_observations_json) : undefined,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 // Generate UUID for new records
 function generateId(): string {
   return crypto.randomUUID();
@@ -112,14 +139,16 @@ export class DatabaseService {
         return { success: false, error: { code: 404, message: 'Project not found' } };
       }
 
-      const assessments = await this.db
+      const assessmentRows = await this.db
         .prepare('SELECT * FROM assessments WHERE project_id = ? ORDER BY created_at DESC')
         .bind(id)
-        .all<Assessment>();
+        .all<AssessmentRow>();
+
+      const assessments = assessmentRows.results.map(parseAssessmentRow);
 
       return {
         success: true,
-        data: { ...project, assessments: assessments.results },
+        data: { ...project, assessments },
       };
     } catch (e) {
       return {
@@ -148,12 +177,26 @@ export class DatabaseService {
       const id = generateId();
       const now = new Date().toISOString();
 
+      // Serialize JSON fields
+      const dimensionsJson = input.dimensions ? JSON.stringify(input.dimensions) : null;
+      const sensoryObservationsJson = input.sensory_observations ? JSON.stringify(input.sensory_observations) : null;
+
       await this.db
         .prepare(
-          `INSERT INTO assessments (id, project_id, room_type, room_name, phase, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'PRE', 'draft', ?, ?)`
+          `INSERT INTO assessments (id, project_id, room_type, room_name, floor_level, dimensions_json, sensory_observations_json, phase, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'PRE', 'draft', ?, ?)`
         )
-        .bind(id, input.project_id, input.room_type, input.room_name ?? null, now, now)
+        .bind(
+          id,
+          input.project_id,
+          input.room_type,
+          input.room_name ?? null,
+          input.floor_level ?? null,
+          dimensionsJson,
+          sensoryObservationsJson,
+          now,
+          now
+        )
         .run();
 
       const assessment: Assessment = {
@@ -163,6 +206,9 @@ export class DatabaseService {
         room_name: input.room_name,
         phase: 'PRE',
         status: 'draft',
+        floor_level: input.floor_level,
+        dimensions: input.dimensions,
+        sensory_observations: input.sensory_observations,
         created_at: now,
         updated_at: now,
       };
@@ -181,13 +227,13 @@ export class DatabaseService {
       const result = await this.db
         .prepare('SELECT * FROM assessments WHERE id = ?')
         .bind(id)
-        .first<Assessment>();
+        .first<AssessmentRow>();
 
       if (!result) {
         return { success: false, error: { code: 404, message: 'Assessment not found' } };
       }
 
-      return { success: true, data: result };
+      return { success: true, data: parseAssessmentRow(result) };
     } catch (e) {
       return {
         success: false,
@@ -198,14 +244,16 @@ export class DatabaseService {
 
   async getAssessmentWithDetails(id: string): Promise<Result<AssessmentWithDetails, ApiError>> {
     try {
-      const assessment = await this.db
+      const assessmentRow = await this.db
         .prepare('SELECT * FROM assessments WHERE id = ?')
         .bind(id)
-        .first<Assessment>();
+        .first<AssessmentRow>();
 
-      if (!assessment) {
+      if (!assessmentRow) {
         return { success: false, error: { code: 404, message: 'Assessment not found' } };
       }
+
+      const assessment = parseAssessmentRow(assessmentRow);
 
       const [images, damageItems, labSamples, priorities] = await Promise.all([
         this.db.prepare('SELECT * FROM images WHERE assessment_id = ?').bind(id).all<ImageRecord>(),
@@ -261,6 +309,19 @@ export class DatabaseService {
       if (input.executive_summary !== undefined) {
         updates.push('executive_summary = ?');
         values.push(input.executive_summary);
+      }
+      // FDAM fields
+      if (input.floor_level !== undefined) {
+        updates.push('floor_level = ?');
+        values.push(input.floor_level);
+      }
+      if (input.dimensions !== undefined) {
+        updates.push('dimensions_json = ?');
+        values.push(JSON.stringify(input.dimensions));
+      }
+      if (input.sensory_observations !== undefined) {
+        updates.push('sensory_observations_json = ?');
+        values.push(JSON.stringify(input.sensory_observations));
       }
 
       values.push(id);

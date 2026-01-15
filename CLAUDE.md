@@ -427,6 +427,38 @@ Image processing workflows will use RunPod serverless endpoints.
 
 **Note:** `.env` is gitignored. Use `.env.example` as template.
 
+### Docker Workflow for RunPod Images
+
+**CRITICAL:** Docker builds are expensive (time + GPU costs from reinitialization). Before any build:
+1. **Verify code is 100% correct** - review all changes thoroughly
+2. **Ensure this is the final build** - no incremental fixes
+
+**Process:** Agents must NOT run Docker commands directly. Instead, provide PowerShell commands for the user to execute.
+
+**IMPORTANT:** Always provide FULL PATH commands. User runs PowerShell from `C:\Users\Lando`, not the project directory.
+
+**Build Command (provide to user):**
+```powershell
+# Run from any PowerShell location - uses full WSL path
+docker build -t gvo555/smokescan-retrieval:vX \\wsl$\Ubuntu\home\lando555\smokescan\runpod-retrieval
+```
+
+**Push Command (provide to user):**
+```powershell
+# Run from PowerShell after build completes
+docker push gvo555/smokescan-retrieval:vX
+```
+
+**Why PowerShell with full paths?**
+- WSL networking causes timeouts on large layer pushes (16GB+ model layers)
+- PowerShell bypasses WSL networking layer for direct Docker Hub access
+- Full paths eliminate need to navigate directories first
+
+**Version Tracking:**
+- Current retrieval image: `gvo555/smokescan-retrieval:v4` (34.3GB, optimized)
+- Always increment version number for new builds
+- Document what changed in each version
+
 **Qwen3-VL Authoritative References (USE THESE - do not deviate):**
 - Model Card: https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking
 - Research Paper: https://huggingface.co/papers/2505.09388

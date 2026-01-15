@@ -6,12 +6,12 @@ FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /app
 
-# Install dependencies (NO vLLM needed - saves space and startup time)
+# Install all dependencies in single layer
 # CRITICAL: transformers==4.57.3 is required for Qwen3-VL models
+# NOTE: torch is NOT installed - base image already has PyTorch 2.4.1+cu124
 RUN pip install --no-cache-dir \
     transformers==4.57.3 \
     faiss-gpu-cu12 \
-    torch \
     accelerate>=0.34.0 \
     qwen-vl-utils>=0.0.14 \
     runpod \
@@ -20,21 +20,14 @@ RUN pip install --no-cache-dir \
     protobuf \
     einops \
     tiktoken \
-    scipy
+    scipy \
+    huggingface_hub
 
-# Install huggingface-cli for model downloads
-RUN pip install --no-cache-dir huggingface_hub
-
-# Verify critical dependencies
-RUN python -c "import transformers; print(f'transformers: {transformers.__version__}')"
-RUN python -c "import faiss; print('FAISS available')"
-
-# Pre-download models at build time (prevents runtime download failures)
-# These models are ~8B parameters each, total ~16GB download
+# Pre-download both models in single layer (prevents runtime download failures)
+# Models are ~8B parameters each, total ~16GB download
 ENV HF_HOME=/root/.cache/huggingface
-RUN echo "Downloading Qwen3-VL-Embedding-8B..." && \
-    huggingface-cli download Qwen/Qwen3-VL-Embedding-8B --local-dir-use-symlinks False
-RUN echo "Downloading Qwen3-VL-Reranker-8B..." && \
+RUN echo "Downloading Qwen3-VL models..." && \
+    huggingface-cli download Qwen/Qwen3-VL-Embedding-8B --local-dir-use-symlinks False && \
     huggingface-cli download Qwen/Qwen3-VL-Reranker-8B --local-dir-use-symlinks False
 
 # Copy RAG pipeline code
