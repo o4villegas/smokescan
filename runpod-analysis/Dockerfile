@@ -3,22 +3,23 @@
 # Uses vLLM to serve Qwen3-VL-30B-A3B-Thinking
 # Qwen-Agent framework enables tool calling for FDAM methodology retrieval
 
+# Use explicit CUDA 12.4.1 base (proven working with RunPod)
+# DO NOT use vllm/vllm-openai:latest - causes CUDA PTX version mismatch
 FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /app
 
-# Install vLLM + qwen-agent + dependencies
-# CRITICAL: transformers==4.57.3 is required for Qwen3-VL models
+# Install vLLM + qwen-agent + dependencies with explicit version pins
+# vLLM 0.11.0 is minimum required for Qwen3-VL support
 RUN pip install --no-cache-dir \
-    vllm>=0.6.0 \
+    vllm==0.11.0 \
     transformers==4.57.3 \
+    accelerate>=0.34.0 \
     qwen-agent \
-    openai \
     runpod \
     requests \
     json5 \
-    qwen-vl-utils>=0.0.14 \
-    accelerate>=0.34.0
+    qwen-vl-utils>=0.0.14
 
 # Verify critical dependencies
 RUN python -c "import transformers; print(f'transformers: {transformers.__version__}')"

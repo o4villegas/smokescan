@@ -10,8 +10,17 @@ echo "=========================================="
 
 # Configuration
 VLLM_PORT=8000
-MAX_RETRIES=60
-RETRY_INTERVAL=5
+MAX_RETRIES=90
+RETRY_INTERVAL=10
+# Total timeout: 15 minutes (sufficient for first-run 60GB model download)
+
+# Point HuggingFace cache to network volume (persistent storage)
+# This prevents "No space left on device" errors - model is ~60GB, container disk is 50GB
+if [ -d "/runpod-volume" ]; then
+    export HF_HOME="/runpod-volume/huggingface-cache"
+    echo "HuggingFace cache set to: $HF_HOME"
+    mkdir -p "$HF_HOME"
+fi
 
 # Find cached model or use HuggingFace
 MODEL_PATH="Qwen/Qwen3-VL-30B-A3B-Thinking"

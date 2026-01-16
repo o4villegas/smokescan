@@ -21,6 +21,13 @@ import runpod
 import re
 import sys
 
+# Debug: Print qwen-agent version for troubleshooting
+try:
+    import qwen_agent
+    print(f"[Debug] qwen-agent version: {qwen_agent.__version__}")
+except Exception as e:
+    print(f"[Debug] Could not get qwen-agent version: {e}")
+
 print("SmokeScan Qwen-Agent Handler - Starting initialization...")
 print(f"Python version: {sys.version}")
 
@@ -191,13 +198,17 @@ def handler(job):
         print(f"[Handler] Processing {len(messages)} messages, max_tokens={max_tokens}")
 
         # Create per-request LLM config with max_tokens from request
+        # Note: OpenAI API uses 'max_tokens', NOT 'max_new_tokens' (HuggingFace param)
         llm_cfg = {
             **LLM_CFG,
             'generate_cfg': {
                 **LLM_CFG['generate_cfg'],
-                'max_new_tokens': max_tokens,  # Qwen-Agent uses max_new_tokens
+                'max_tokens': max_tokens,
             }
         }
+
+        # Debug: Log the full generate_cfg to trace max_new_tokens source
+        print(f"[Debug] llm_cfg generate_cfg: {llm_cfg.get('generate_cfg', {})}")
 
         # Create agent with FDAM RAG tool
         # Reference: qwen2vl_assistant_tooluse.py pattern
