@@ -20,10 +20,9 @@ export async function handleHealth(c: Context<{ Bindings: WorkerEnv }>) {
     version: '1.0.1',
   };
 
-  // Check RunPod configuration (split endpoints)
+  // Check RunPod configuration (Analysis endpoint only)
   checks.services.runpod = !!(
     c.env.RUNPOD_API_KEY &&
-    c.env.RUNPOD_RETRIEVAL_ENDPOINT_ID &&
     c.env.RUNPOD_ANALYSIS_ENDPOINT_ID
   );
 
@@ -89,3 +88,4 @@ export async function handleRagTest(c: Context<{ Bindings: WorkerEnv }>) {
     }, 500);
   }
 }
+
