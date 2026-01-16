@@ -6,19 +6,23 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
 		"enabled": true,
+		"head_sampling_rate": 1,
 		"logs": {
 			"enabled": true,
+			"head_sampling_rate": 1,
+			"persist": true,
 			"invocation_logs": true
+		},
+		"traces": {
+			"enabled": true,
+			"persist": true,
+			"head_sampling_rate": 1
 		}
 	},
 	"upload_source_maps": true,
 	"assets": {
 		"directory": "./dist/client",
 		"not_found_handling": "single-page-application"
-	},
-	"vars": {
-		"RUNPOD_RETRIEVAL_ENDPOINT_ID": "247a9nghlzoezm",
-		"RUNPOD_ANALYSIS_ENDPOINT_ID": "mooeb2rzvifn0q"
 	},
 	"kv_namespaces": [
 		{
