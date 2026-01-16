@@ -11,7 +11,7 @@
 import type { Context } from 'hono';
 import type { WorkerEnv, AssessmentReport, SessionState, VisionAnalysisOutput } from '../types';
 import { AssessmentRequestSchema } from '../schemas';
-import { RunPodService, SessionService } from '../services';
+import { RunPodService, SessionService, StorageService } from '../services';
 
 export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
   const startTime = Date.now();
@@ -45,12 +45,58 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
   const { images, metadata } = parsed.data;
 
   // Initialize services
-  // Note: RAGService no longer needed here - Qwen-Agent handles RAG via fdam_rag tool
   const runpod = new RunPodService({
     apiKey: c.env.RUNPOD_API_KEY,
     analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
   });
-  const session = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
+  const sessionService = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
+  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
+
+  // Generate sessionId first (used as prefix for R2 storage)
+  const sessionId = sessionService.generateSessionId();
+
+  // Save images to R2 for later use in chat (in parallel)
+  console.log(`[Assess] Saving ${images.length} images to R2`);
+  const imageR2Keys: string[] = [];
+  const uploadPromises = images.map(async (base64Image, index) => {
+    // Extract content type from data URI or default to jpeg
+    let contentType = 'image/jpeg';
+    let rawBase64 = base64Image;
+
+    if (base64Image.startsWith('data:')) {
+      const match = base64Image.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        contentType = match[1];
+        rawBase64 = match[2];
+      }
+    }
+
+    // Convert base64 to ArrayBuffer
+    const binaryString = atob(rawBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const uploadResult = await storage.uploadImage(
+      sessionId,
+      `image-${index}.${contentType.split('/')[1] || 'jpg'}`,
+      bytes.buffer,
+      contentType
+    );
+
+    if (uploadResult.success) {
+      return uploadResult.data.key;
+    }
+    console.warn(`[Assess] Failed to upload image ${index}:`, uploadResult.error);
+    return null;
+  });
+
+  const uploadedKeys = await Promise.all(uploadPromises);
+  for (const key of uploadedKeys) {
+    if (key) imageR2Keys.push(key);
+  }
+  console.log(`[Assess] Saved ${imageR2Keys.length}/${images.length} images to R2`);
 
   // Call Qwen-Agent endpoint (handles RAG internally via fdam_rag tool)
   console.log(`[Assess] Sending ${images.length} images to Qwen-Agent`);
@@ -69,21 +115,20 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
   // The agent now handles this internally, but we need session data for chat
   const visionAnalysis: VisionAnalysisOutput = extractVisionSummary(assessResult.data);
 
-  // Save session (without RAG chunks - agent retrieves dynamically)
-  const sessionId = session.generateSessionId();
+  // Save session with R2 image keys for chat access
   const sessionState: SessionState = {
     sessionId,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     metadata,
-    imageUrls: [], // Don't store full images in session
+    imageR2Keys, // R2 keys for images (enables chat with images)
     visionAnalysis,
     ragChunks: [], // No longer pre-fetching RAG - agent handles dynamically
     report,
     conversationHistory: [],
   };
 
-  await session.save(sessionState);
+  await sessionService.save(sessionState);
 
   const processingTimeMs = Date.now() - startTime;
 

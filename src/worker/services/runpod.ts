@@ -61,13 +61,15 @@ export class RunPodService {
    *
    * @param conversationHistory - Previous messages in the conversation
    * @param sessionContext - Summary of the assessment session
+   * @param images - All images (original + new) as base64 data URIs
    */
   async chat(
     conversationHistory: Array<{ role: string; content: string }>,
-    sessionContext: string
+    sessionContext: string,
+    images: string[] = []
   ): Promise<Result<string, ApiError>> {
-    console.log(`[RunPod] Calling Qwen-Agent endpoint for chat`);
-    return this.callAnalysisEndpointChat(conversationHistory, sessionContext);
+    console.log(`[RunPod] Calling Qwen-Agent endpoint for chat with ${images.length} images`);
+    return this.callAnalysisEndpointChat(conversationHistory, sessionContext, images);
   }
 
   /**
@@ -141,14 +143,43 @@ Generate a comprehensive FDAM assessment report. Use the fdam_rag tool to retrie
    */
   private async callAnalysisEndpointChat(
     conversationHistory: Array<{ role: string; content: string }>,
-    sessionContext: string
+    sessionContext: string,
+    images: string[] = []
   ): Promise<Result<string, ApiError>> {
     const endpointUrl = `https://api.runpod.ai/v2/${this.config.analysisEndpointId}`;
+
+    // Build messages with images included in the latest user message
+    // Images are included so the model can reference them when answering
+    let messagesWithImages = conversationHistory;
+
+    if (images.length > 0) {
+      // Find the last user message and add images to it
+      const lastUserIndex = conversationHistory.findIndex(
+        (msg, idx) => msg.role === 'user' && idx === conversationHistory.length - 1
+      );
+
+      if (lastUserIndex !== -1) {
+        const lastUserMsg = conversationHistory[lastUserIndex];
+        const content: Array<{ type: string; text?: string; image?: string }> = [
+          { type: 'text', text: lastUserMsg.content },
+        ];
+
+        for (const image of images) {
+          content.push({ type: 'image', image });
+        }
+
+        messagesWithImages = [
+          ...conversationHistory.slice(0, lastUserIndex),
+          { role: 'user', content: content as unknown as string },
+          ...conversationHistory.slice(lastUserIndex + 1),
+        ];
+      }
+    }
 
     // No rag_context - Qwen-Agent calls fdam_rag tool as needed
     const requestBody = {
       input: {
-        messages: conversationHistory,
+        messages: messagesWithImages,
         session_context: sessionContext,
         max_tokens: 4000,
       },

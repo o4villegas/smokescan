@@ -108,12 +108,12 @@ Use this tool to retrieve FDAM methodology before making claims about thresholds
 
         except requests.exceptions.Timeout:
             print('[fdam_rag] Request timed out')
-            return 'FDAM RAG request timed out. Proceeding with general fire damage assessment principles.'
+            raise RuntimeError('FDAM RAG request timed out - cannot proceed without methodology context')
 
         except requests.exceptions.RequestException as e:
             print(f'[fdam_rag] Network error: {e}')
-            return f'FDAM RAG network error: {str(e)}. Proceeding with general fire damage assessment principles.'
+            raise RuntimeError(f'FDAM RAG network error: {str(e)} - cannot proceed without methodology context')
 
         except Exception as e:
             print(f'[fdam_rag] Unexpected error: {e}')
-            return f'FDAM RAG tool error: {str(e)}'
+            raise RuntimeError(f'FDAM RAG tool error: {str(e)}')

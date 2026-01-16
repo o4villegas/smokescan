@@ -61,6 +61,10 @@ export type AssessmentRequestInput = z.infer<typeof AssessmentRequestSchema>;
 export const ChatRequestSchema = z.object({
   sessionId: z.string().uuid('Invalid session ID format'),
   message: z.string().min(1, 'Message cannot be empty').max(5000, 'Message too long'),
+  images: z
+    .array(Base64ImageSchema)
+    .max(5, 'Maximum 5 images per chat message')
+    .optional(),
 });
 
 export type ChatRequestInput = z.infer<typeof ChatRequestSchema>;
