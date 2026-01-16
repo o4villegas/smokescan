@@ -6,7 +6,6 @@ Called by Qwen3-VL when it needs fire damage assessment guidance
 Reference: https://github.com/QwenLM/Qwen-Agent/blob/main/docs/tool.md
 """
 import os
-import json
 import json5
 import requests
 from typing import Union, List

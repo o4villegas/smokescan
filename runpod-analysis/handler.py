@@ -20,7 +20,6 @@ Output: {"output": "assessment report"}
 import runpod
 import re
 import sys
-import os
 
 print("SmokeScan Qwen-Agent Handler - Starting initialization...")
 print(f"Python version: {sys.version}")
@@ -191,10 +190,19 @@ def handler(job):
         print(f"[Handler] Creating FnCallAgent with fdam_rag tool")
         print(f"[Handler] Processing {len(messages)} messages, max_tokens={max_tokens}")
 
+        # Create per-request LLM config with max_tokens from request
+        llm_cfg = {
+            **LLM_CFG,
+            'generate_cfg': {
+                **LLM_CFG['generate_cfg'],
+                'max_new_tokens': max_tokens,  # Qwen-Agent uses max_new_tokens
+            }
+        }
+
         # Create agent with FDAM RAG tool
         # Reference: qwen2vl_assistant_tooluse.py pattern
         agent = FnCallAgent(
-            llm=LLM_CFG,
+            llm=llm_cfg,
             function_list=['fdam_rag'],
             name='SmokeScan FDAM Agent',
             system_message=system_message,
