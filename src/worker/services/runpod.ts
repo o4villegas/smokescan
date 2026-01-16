@@ -150,18 +150,17 @@ Generate a comprehensive FDAM assessment report. Use the fdam_rag tool to retrie
 
     // Build messages with images included in the latest user message
     // Images are included so the model can reference them when answering
-    let messagesWithImages = conversationHistory;
+    let messagesWithImages: Array<{ role: string; content: unknown }> = conversationHistory;
 
-    if (images.length > 0) {
-      // Find the last user message and add images to it
-      const lastUserIndex = conversationHistory.findIndex(
-        (msg, idx) => msg.role === 'user' && idx === conversationHistory.length - 1
-      );
+    if (images.length > 0 && conversationHistory.length > 0) {
+      // The last message is always the new user message (added by chat.ts)
+      const lastIndex = conversationHistory.length - 1;
+      const lastMsg = conversationHistory[lastIndex];
 
-      if (lastUserIndex !== -1) {
-        const lastUserMsg = conversationHistory[lastUserIndex];
+      if (lastMsg.role === 'user') {
+        // Build multimodal content with text + images
         const content: Array<{ type: string; text?: string; image?: string }> = [
-          { type: 'text', text: lastUserMsg.content },
+          { type: 'text', text: lastMsg.content },
         ];
 
         for (const image of images) {
@@ -169,9 +168,8 @@ Generate a comprehensive FDAM assessment report. Use the fdam_rag tool to retrie
         }
 
         messagesWithImages = [
-          ...conversationHistory.slice(0, lastUserIndex),
-          { role: 'user', content: content as unknown as string },
-          ...conversationHistory.slice(lastUserIndex + 1),
+          ...conversationHistory.slice(0, lastIndex),
+          { role: 'user', content },
         ];
       }
     }
