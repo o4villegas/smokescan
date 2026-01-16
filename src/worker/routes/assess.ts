@@ -2,9 +2,10 @@
  * Assessment Route Handler
  * POST /api/assess - Submit images for FDAM assessment
  *
- * Architecture: Split "Retrieve First, Reason Last" pattern
- * 1. Retrieval endpoint: Embedding + Reranking for FDAM methodology
- * 2. Analysis endpoint: Vision reasoning with Qwen3-VL-30B
+ * Architecture:
+ * Qwen-Agent on RunPod handles both vision reasoning AND RAG retrieval
+ * The VL model decides when to query FDAM methodology based on what it observes
+ * RAG queries are made via the fdam_rag tool calling back to /api/rag/query
  */
 
 import type { Context } from 'hono';
@@ -43,16 +44,16 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
 
   const { images, metadata } = parsed.data;
 
-  // Initialize RunPod service with split endpoint configuration
+  // Initialize services
+  // Note: RAGService no longer needed here - Qwen-Agent handles RAG via fdam_rag tool
   const runpod = new RunPodService({
     apiKey: c.env.RUNPOD_API_KEY,
-    retrievalEndpointId: c.env.RUNPOD_RETRIEVAL_ENDPOINT_ID,
     analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
   });
-
   const session = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
 
-  // Call split architecture: Retrieve First, Reason Last
+  // Call Qwen-Agent endpoint (handles RAG internally via fdam_rag tool)
+  console.log(`[Assess] Sending ${images.length} images to Qwen-Agent`);
   const assessResult = await runpod.assess(images, metadata);
   if (!assessResult.success) {
     return c.json(

@@ -11,6 +11,7 @@ import {
   handleChat,
   handleHealth,
   handleRagTest,
+  handleRagQuery,
   projectsRoutes,
   assessmentsRoutes,
   imagesRoutes,
@@ -34,6 +35,9 @@ app.get('/api/health', handleHealth);
 
 // RAG test endpoint (for debugging AI Search)
 app.get('/api/health/rag', handleRagTest);
+
+// RAG query endpoint (called by RunPod Qwen-Agent)
+app.post('/api/rag/query', handleRagQuery);
 
 // Project management routes
 app.route('/api/projects', projectsRoutes);
@@ -84,6 +88,7 @@ app.get('/api/', (c) => c.json({
     assess: '/api/assess',
     chat: '/api/chat',
     health: '/api/health',
+    ragQuery: '/api/rag/query',
   },
 }));
 

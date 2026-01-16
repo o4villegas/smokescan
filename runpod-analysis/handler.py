@@ -1,14 +1,18 @@
 """
-SmokeScan Analysis Endpoint - Vision reasoning only
-Receives pre-fetched RAG context, no internal RAG calls
+SmokeScan Analysis Endpoint - Qwen-Agent with FDAM RAG Tool
+Vision reasoning with dynamic RAG retrieval
 
-This endpoint handles fire damage image analysis using:
-- Qwen3-VL-30B-A3B-Thinking via vLLM
-- Pre-fetched FDAM methodology context (from Retrieval endpoint)
+References:
+- https://github.com/QwenLM/Qwen-Agent/blob/main/examples/qwen2vl_assistant_tooluse.py
+- https://github.com/QwenLM/Qwen-Agent/blob/main/examples/assistant_qwen3vl.py
+
+Architecture:
+- VL model observes images and decides when to query FDAM methodology
+- RAG queries are based on observed damage, not user metadata
+- Model can make multiple RAG queries for complex scenarios
 
 Input: {
     "messages": [...],        # Images + prompt in OpenAI format
-    "rag_context": "...",     # Pre-fetched from Retrieval endpoint
     "max_tokens": 8000
 }
 Output: {"output": "assessment report"}
@@ -16,39 +20,65 @@ Output: {"output": "assessment report"}
 import runpod
 import re
 import sys
+import os
 
-print("SmokeScan Analysis Handler - Starting initialization...")
+print("SmokeScan Qwen-Agent Handler - Starting initialization...")
 print(f"Python version: {sys.version}")
 
-# System prompt that uses pre-fetched context (no tool calling)
-ANALYSIS_SYSTEM_PROMPT = """You are an expert fire damage assessment consultant implementing FDAM (Fire Damage Assessment Methodology) v4.0.1.
+# Import and register custom tool
+# This registers 'fdam_rag' via the @register_tool decorator
+sys.path.insert(0, '/app')
+from tools.fdam_rag import FDAMRagTool
 
-## FDAM Methodology Reference
-{rag_context}
+print(f"[Handler] FDAM RAG tool registered: {FDAMRagTool.name}")
+
+# vLLM configuration for Qwen-Agent with vision model
+# Reference: qwen2vl_assistant_tooluse.py example
+LLM_CFG = {
+    'model_type': 'qwenvl_oai',
+    'model': 'qwen3-vl',
+    'model_server': 'http://localhost:8000/v1',
+    'api_key': 'EMPTY',
+    'generate_cfg': {
+        'max_retries': 10,
+        'fncall_prompt_type': 'qwen',  # Required for tool calling
+        'top_p': 0.8,
+        'temperature': 0.7,
+    }
+}
+
+# System prompt for FDAM assessment with tool usage guidance
+ANALYSIS_SYSTEM_PROMPT = """You are an expert fire damage assessment consultant implementing FDAM v4.0.1 (Fire Damage Assessment Methodology).
 
 ## Your Process
 
-1. **OBSERVE**: Examine the images for visible damage indicators:
-   - Zone characteristics (burn patterns, smoke deposits, heat exposure)
-   - Surface materials and their condition
-   - Contamination severity and distribution
+1. **OBSERVE**: Examine the images carefully for:
+   - Zone Indicators: Burn patterns, char deposits, smoke staining, heat exposure
+   - Surface Materials: Steel beams, concrete, drywall, insulation, HVAC, ceiling deck
+   - Combustion Products: Soot (aciniform), Char (angular), Ash (mineral residue)
+   - Condition: Background / Light / Moderate / Heavy / Structural Damage
 
-2. **ANALYZE**: Compare observations against the FDAM methodology above:
-   - Match observed conditions to FDAM classifications
-   - Determine appropriate disposition per methodology
-   - Identify sampling requirements
+2. **RESEARCH**: Use the fdam_rag tool to query FDAM methodology for:
+   - Zone classification criteria based on observed indicators
+   - Disposition protocols for identified materials
+   - Threshold values for particle types
+   - Surface-specific protocols (ceiling decks need enhanced sampling)
 
-3. **SYNTHESIZE**: Generate assessment report with:
-   - Executive Summary
-   - Damage observations by area
-   - FDAM-grounded recommendations with citations
-   - Scope indicators (NO cost estimates)
+3. **SYNTHESIZE**: Generate PRE (Pre-Restoration Evaluation) report:
+   - Executive Summary: Damage severity, primary zone, urgent items
+   - Zone Classification: With evidence and FDAM citations
+   - Surface Assessment: Material inventory with conditions
+   - Disposition Recommendations: Clean / Remove / No-action per FDAM
+   - Sampling Recommendations: Tape lifts, wipes, sample density
+   - Scope Indicators: Labor categories, equipment (NO cost estimates)
 
 ## Critical Requirements
-- Base ALL recommendations on the methodology provided above
-- Cite specific FDAM sections when making recommendations
-- Use FDAM terminology throughout
-- When sources conflict, defer to FDAM methodology
+
+- ALWAYS use fdam_rag tool before making claims about thresholds or dispositions
+- Cite specific FDAM sections (e.g., "per FDAM 4.3 Disposition Matrix")
+- Flag ceiling decks for enhanced PRV sampling
+- Use condition scale: Background/Light/Moderate/Heavy/Structural Damage
+- Never provide cost estimates - only scope indicators
 """
 
 # Chat system prompt for follow-up conversations
@@ -57,25 +87,57 @@ CHAT_SYSTEM_PROMPT = """You are an expert fire damage assessment consultant cont
 ## Previous Assessment Context
 {session_context}
 
-## FDAM Methodology Reference
-{rag_context}
+## Your Role
+Answer follow-up questions about the assessment. Use the fdam_rag tool to retrieve specific FDAM methodology when asked about thresholds, dispositions, or protocols.
 
-Base your responses on the methodology provided above.
-Always ground responses in the FDAM methodology - do not assume values or classifications.
+- Cite FDAM sections in responses
+- Base all technical claims on methodology, not assumptions
 """
 
 
 def strip_think_blocks(text: str) -> str:
-    """
-    Remove <think>...</think> blocks from Qwen3-VL-Thinking model output.
-    The model outputs reasoning in these blocks, but they should not be shown to users.
-    """
+    """Remove <think>...</think> blocks from Qwen3-VL-Thinking model output."""
     return re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+
+
+def extract_response_text(response_list: list) -> str:
+    """Extract text content from Qwen-Agent response list.
+
+    The response from agent.run() is a list of message dicts.
+    We want the final assistant message content.
+    """
+    if not response_list:
+        return ""
+
+    # Get the last response
+    last_response = response_list[-1] if response_list else {}
+
+    # Handle different response formats
+    if isinstance(last_response, dict):
+        content = last_response.get('content', '')
+        if isinstance(content, str):
+            return content
+        elif isinstance(content, list):
+            # Content is a list of content blocks
+            text_parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get('type') == 'text':
+                        text_parts.append(item.get('text', ''))
+                    elif 'text' in item:
+                        text_parts.append(item.get('text', ''))
+                elif isinstance(item, str):
+                    text_parts.append(item)
+            return ' '.join(text_parts)
+    elif isinstance(last_response, str):
+        return last_response
+
+    return ""
 
 
 def handler(job):
     """
-    Process image analysis requests with pre-fetched RAG context.
+    Process image analysis requests using Qwen-Agent with fdam_rag tool.
 
     Input format:
     {
@@ -85,7 +147,6 @@ def handler(job):
                 {"type": "text", "text": "Analyze this fire damage."}
             ]}
         ],
-        "rag_context": "Retrieved FDAM methodology...",
         "max_tokens": 8000,
         "session_context": "..." (optional, for chat mode)
     }
@@ -96,63 +157,99 @@ def handler(job):
     }
     """
     try:
-        from openai import OpenAI
+        from qwen_agent.agents import FnCallAgent
 
         job_input = job["input"]
         messages = job_input.get("messages", [])
-        rag_context = job_input.get("rag_context", "No methodology context provided. Use general fire damage assessment principles.")
         max_tokens = job_input.get("max_tokens", 8000)
         session_context = job_input.get("session_context", "")
 
         if not messages:
             return {"error": "No messages provided"}
 
-        # Build system prompt based on mode
+        # Select system prompt based on mode
         if session_context:
-            # Chat mode - include session context
-            system_prompt = CHAT_SYSTEM_PROMPT.format(
-                session_context=session_context,
-                rag_context=rag_context
-            )
+            system_message = CHAT_SYSTEM_PROMPT.format(session_context=session_context)
         else:
-            # Assessment mode
-            system_prompt = ANALYSIS_SYSTEM_PROMPT.format(rag_context=rag_context)
+            system_message = ANALYSIS_SYSTEM_PROMPT
 
-        print(f"Processing request with {len(messages)} messages, rag_context length: {len(rag_context)}")
+        print(f"[Handler] Creating FnCallAgent with fdam_rag tool")
+        print(f"[Handler] Processing {len(messages)} messages, max_tokens={max_tokens}")
 
-        # Call vLLM server (started by start.sh)
-        client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
-
-        response = client.chat.completions.create(
-            model="qwen3-vl",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                *messages
-            ],
-            max_tokens=max_tokens,
-            temperature=0.7,
+        # Create agent with FDAM RAG tool
+        # Reference: qwen2vl_assistant_tooluse.py pattern
+        agent = FnCallAgent(
+            llm=LLM_CFG,
+            function_list=['fdam_rag'],
+            name='SmokeScan FDAM Agent',
+            system_message=system_message,
         )
 
-        final_response = response.choices[0].message.content
+        # Convert messages to Qwen-Agent format if needed
+        # Qwen-Agent expects: [{'image': url}, {'text': query}] not [{'type': 'image', ...}]
+        formatted_messages = []
+        for msg in messages:
+            if msg.get('role') == 'user':
+                content = msg.get('content', '')
+                if isinstance(content, list):
+                    # Convert OpenAI format to Qwen-Agent format
+                    new_content = []
+                    for item in content:
+                        if item.get('type') == 'image':
+                            # Handle both 'image' and 'image_url' keys
+                            img = item.get('image') or item.get('image_url', {}).get('url', '')
+                            if img:
+                                new_content.append({'image': img})
+                        elif item.get('type') == 'text':
+                            new_content.append({'text': item.get('text', '')})
+                        elif 'image' in item:
+                            new_content.append({'image': item['image']})
+                        elif 'text' in item:
+                            new_content.append({'text': item['text']})
+                    formatted_messages.append({'role': 'user', 'content': new_content})
+                else:
+                    formatted_messages.append(msg)
+            else:
+                formatted_messages.append(msg)
 
-        if not final_response:
+        # Run agent - returns list of response messages
+        print(f"[Handler] Running agent with {len(formatted_messages)} formatted messages")
+        response_list = list(agent.run(messages=formatted_messages))
+
+        # Extract text from response
+        response_text = extract_response_text(response_list)
+
+        if not response_text:
+            # Try alternative extraction
+            for resp in reversed(response_list):
+                if isinstance(resp, list):
+                    for item in resp:
+                        if isinstance(item, dict) and item.get('role') == 'assistant':
+                            response_text = item.get('content', '')
+                            if response_text:
+                                break
+                if response_text:
+                    break
+
+        if not response_text:
             return {"error": "No response generated by model"}
 
         # Strip <think> blocks before returning to user
-        final_response = strip_think_blocks(final_response)
+        response_text = strip_think_blocks(response_text)
 
-        print(f"Generated response: {len(final_response)} chars")
-        return {"output": final_response}
+        print(f"[Handler] Generated response: {len(response_text)} chars")
+        return {"output": response_text}
 
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        print(f"Handler error: {e}\n{error_trace}")
+        print(f"[Handler] Error: {e}\n{error_trace}")
         return {
             "error": str(e),
             "traceback": error_trace
         }
 
 
-print("Analysis Handler initialized - waiting for vLLM server...")
+print("[Handler] Qwen-Agent FnCallAgent Handler initialized")
+print("[Handler] Waiting for vLLM server to start...")
 runpod.serverless.start({"handler": handler})

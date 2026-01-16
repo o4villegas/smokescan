@@ -2,8 +2,9 @@
  * Chat Route Handler
  * POST /api/chat - Send follow-up questions about an assessment
  *
- * Architecture: Split "Retrieve First, Reason Last" pattern
- * Session context provides previous assessment data for grounded responses.
+ * Architecture:
+ * Qwen-Agent on RunPod handles chat with session context
+ * RAG retrieval is handled internally via fdam_rag tool when needed
  */
 
 import type { Context } from 'hono';
@@ -77,14 +78,13 @@ ${session.report.fdamRecommendations.slice(0, 5).map((r) => `- ${r}`).join('\n')
     { role: 'user' as const, content: message },
   ];
 
-  // Initialize RunPod service with split endpoint configuration
+  // Initialize RunPod service (Qwen-Agent handles RAG via fdam_rag tool)
   const runpod = new RunPodService({
     apiKey: c.env.RUNPOD_API_KEY,
-    retrievalEndpointId: c.env.RUNPOD_RETRIEVAL_ENDPOINT_ID,
     analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
   });
 
-  // Call split architecture: Retrieve First, Reason Last
+  // Call Qwen-Agent endpoint (handles RAG internally via fdam_rag tool)
   const chatResult = await runpod.chat(conversationHistory, sessionContext);
 
   if (!chatResult.success) {
