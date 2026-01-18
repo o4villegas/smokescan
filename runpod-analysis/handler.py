@@ -1,289 +1,439 @@
 """
-SmokeScan Analysis Endpoint - Qwen-Agent with FDAM RAG Tool
-Vision reasoning with dynamic RAG retrieval
-
-References:
-- https://github.com/QwenLM/Qwen-Agent/blob/main/examples/qwen2vl_assistant_tooluse.py
-- https://github.com/QwenLM/Qwen-Agent/blob/main/examples/assistant_qwen3vl.py
+SmokeScan Analysis Endpoint - Two-Pass Transformers
+Direct Qwen3-VL-32B-Instruct inference with contextual RAG
 
 Architecture:
-- VL model observes images and decides when to query FDAM methodology
-- RAG queries are based on observed damage, not user metadata
-- Model can make multiple RAG queries for complex scenarios
+- Pass 1: Model observes images, outputs observations only
+- RAG Fetch: Handler selects deterministic FDAM methodology queries
+- Pass 2: Model generates full PRE report with methodology context
 
 Input: {
     "messages": [...],        # Images + prompt in OpenAI format
-    "max_tokens": 8000
+    "max_tokens": 4096,
+    "session_context": "..."  # Optional, for chat mode
 }
 Output: {"output": "assessment report"}
 """
 import runpod
+import torch
+import requests
 import re
-import sys
+from PIL import Image
+from io import BytesIO
+import base64
 
-# Debug: Print qwen-agent version for troubleshooting
-try:
-    import qwen_agent
-    print(f"[Debug] qwen-agent version: {qwen_agent.__version__}")
-except Exception as e:
-    print(f"[Debug] Could not get qwen-agent version: {e}")
+# Model configuration
+MODEL_ID = "Qwen/Qwen3-VL-32B-Instruct"
+RAG_URL = "https://smokescan.lando555.workers.dev/api/rag/query"
+MAX_IMAGES = 10  # Prevent VRAM overflow
 
-print("SmokeScan Qwen-Agent Handler - Starting initialization...")
-print(f"Python version: {sys.version}")
+# Global model/processor (loaded once at startup)
+model = None
+processor = None
 
-# Import and register custom tool
-# This registers 'fdam_rag' via the @register_tool decorator
-sys.path.insert(0, '/app')
-from tools.fdam_rag import FDAMRagTool
 
-print(f"[Handler] FDAM RAG tool registered: {FDAMRagTool.name}")
+def load_model():
+    """Load model at startup (not per-request)"""
+    global model, processor
 
-# vLLM configuration for Qwen-Agent with vision model
-# Reference: qwen2vl_assistant_tooluse.py example
-LLM_CFG = {
-    'model_type': 'qwenvl_oai',
-    'model': 'qwen3-vl',
-    'model_server': 'http://localhost:8000/v1',
-    'api_key': 'EMPTY',
-    'generate_cfg': {
-        'max_retries': 10,
-        'fncall_prompt_type': 'qwen',  # Required for tool calling
-        'top_p': 0.8,
-        'temperature': 0.7,
-    }
-}
+    from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 
-# System prompt for FDAM assessment with tool usage guidance
-# Enhanced based on third-party audit of Qwen3-VL capabilities for FDAM workflows
-ANALYSIS_SYSTEM_PROMPT = """You are an expert fire damage assessment consultant implementing FDAM v4.0.1 (Fire Damage Assessment Methodology).
+    print(f"[Handler] Loading {MODEL_ID}...")
+    processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+    model = Qwen3VLForConditionalGeneration.from_pretrained(
+        MODEL_ID,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        attn_implementation="flash_attention_2",
+        device_map="auto"
+    ).eval()
+    print("[Handler] Model loaded successfully")
 
-## Your Process
 
-1. **OBSERVE**: Examine the images carefully for:
-   - Zone Indicators: Burn patterns, char deposits, smoke staining, heat exposure
-   - Surface Materials: Steel beams, concrete, drywall, insulation, HVAC, ceiling deck
-   - Combustion Products: Soot (aciniform), Char (angular), Ash (mineral residue)
-   - Condition: Background / Light / Moderate / Heavy / Structural Damage
-   - **Labels & Signage**: Read any visible text on equipment, chemical containers, electrical panels, or warning signs that may indicate hazardous materials (lead, batteries, chemicals)
-   - **High-Risk Sampling Areas**: Pay special attention to HVAC inlets/outlets, vents, and horizontal surfaces where particulates settle
+# System prompts for two-pass generation
+PASS1_SYSTEM_PROMPT = """You are a fire damage observation specialist.
 
-2. **RESEARCH**: Use the fdam_rag tool to query FDAM methodology for:
-   - Zone classification criteria based on observed indicators
-   - Disposition protocols for identified materials
-   - Threshold values for particle types
-   - Surface-specific protocols (ceiling decks need enhanced sampling)
+If multiple images are provided, they are from the SAME space showing different angles. Synthesize observations across all images into a unified assessment.
 
-3. **SYNTHESIZE**: Generate PRE (Pre-Restoration Evaluation) report:
-   - Executive Summary: Damage severity, primary zone, urgent items
-   - Zone Classification: With evidence and FDAM methodology basis
-   - Surface Assessment: Material inventory with conditions
-   - Disposition Recommendations: Clean / Remove / No-action per FDAM
-   - Sampling Recommendations: Tape lifts, wipes, sample density
-   - **Regulatory Compliance Flags**: Note any areas requiring specialized testing (metals, hazmat) based on observed labels or equipment types
-   - Scope Indicators: Labor categories, equipment (NO cost estimates)
-   - **Advisory Notice**: Include statement that this assessment is advisory and requires validation by qualified professionals before remediation
+Observe and document:
+- Zone indicators: burn patterns, char, smoke staining, heat exposure
+- Materials: steel, concrete, ceiling deck, insulation, HVAC, drywall
+- Combustion products: soot, char, ash deposits
+- Condition: background / light / moderate / heavy / structural
 
-## Critical Requirements
+Output format:
 
-- ALWAYS use fdam_rag tool before making claims about thresholds or dispositions
-- Flag ceiling decks for enhanced PRV sampling
-- Flag any areas with visible chemical/hazmat indicators for specialized testing
-- Never provide cost estimates - only scope indicators
-- Always include advisory disclaimer in final report
-"""
+## Observations
+[Detailed observations as bullet points, noting specific materials and conditions observed]"""
 
-# Chat system prompt for follow-up conversations
-# Also enhanced with audit-driven requirements for consistency
-CHAT_SYSTEM_PROMPT = """You are an expert fire damage assessment consultant continuing a previous assessment.
+PASS1_TEXT_ONLY_PROMPT = """You are an FDAM methodology specialist.
 
-## Previous Assessment Context
+## Your Task
+Analyze the user's question to understand:
+- What fire damage scenario they're asking about
+- What specific materials, zones, or procedures are relevant
+
+Output format:
+
+## Analysis
+[Brief analysis of what the user is asking about - 2-3 sentences identifying key topics]"""
+
+PASS2_SYSTEM_PROMPT_TEMPLATE = """You are a fire damage assessment consultant using FDAM v4.0.1.
+
+## Reference Material
+{rag_context}
+
+## Observations
+{observations}
+
+Generate a PRE report with these sections:
+1. Executive Summary - severity, zone classification, urgent items
+2. Zone Classification - with FDAM methodology basis
+3. Surface Assessment - materials and conditions
+4. Disposition - Clean / Remove / No-action per methodology
+5. Sampling Recommendations - tape lifts, wipes, density
+
+Use ONLY thresholds from the Reference Material. If a value isn't specified, say so.
+
+**Advisory**: Requires professional validation before remediation."""
+
+PASS2_TEXT_ONLY_PROMPT = """You are an FDAM methodology expert.
+
+## Reference Material
+{rag_context}
+
+## Question Context
+{observations}
+
+Answer the user's question using ONLY the reference material above. If the answer isn't in the reference, say so. Be concise."""
+
+CHAT_PASS1_PROMPT_TEMPLATE = """You are continuing a fire damage assessment conversation.
+
+## Previous Context
 {session_context}
 
-## Your Role
-Answer follow-up questions about the assessment. The user may include images from the assessment or upload new images for analysis.
+## Your Task
+Based on the user's question and any new images, provide analysis of what they're asking about.
 
-When images are provided:
-- Reference specific visual details when answering questions
-- If new images are uploaded, analyze them in context of the existing assessment
-- **Read any visible labels/signage** on equipment, containers, or warning signs that may indicate hazardous materials
-- **Note high-risk sampling areas**: HVAC inlets/outlets, vents, horizontal surfaces where particulates settle
-- Use the fdam_rag tool to retrieve FDAM methodology as needed
+Output in this format:
+## Analysis
+[Brief analysis of what the user is asking about, noting key topics and materials mentioned]"""
+
+CHAT_PASS2_PROMPT_TEMPLATE = """You are an expert fire damage assessment consultant continuing a previous assessment.
+
+## Previous Context
+{session_context}
+
+## FDAM Methodology Reference
+{rag_context}
+
+## Your Analysis
+{analysis}
+
+## Your Task
+Answer the user's question based on the assessment context and FDAM methodology above.
 
 ## Critical Requirements
-- Base all technical claims on methodology, not assumptions
-- **Flag any areas requiring specialized testing** (metals, hazmat) based on observed labels or equipment types
-- **Include advisory notice** when providing recommendations: This assessment is advisory and requires validation by qualified professionals before remediation
-"""
+- Base technical claims on the FDAM methodology provided
+- Reference specific visual details if images are involved
+- Include advisory notice when providing recommendations
+
+**Advisory Notice**: This assessment is advisory and requires validation by qualified professionals before remediation."""
 
 
-def strip_think_blocks(text: str) -> str:
-    """Remove <think>...</think> blocks from Qwen3-VL-Thinking model output."""
-    return re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+def decode_image(image_data: str) -> Image.Image:
+    """Decode base64 image data to PIL Image"""
+    if image_data.startswith("data:"):
+        # Extract base64 from data URI
+        _, data = image_data.split(",", 1)
+    else:
+        data = image_data
+    return Image.open(BytesIO(base64.b64decode(data)))
 
 
-def extract_response_text(response_list: list) -> str:
-    """Extract text content from Qwen-Agent response list.
+def extract_images_and_text(messages: list) -> tuple:
+    """Extract images and text from OpenAI-format messages"""
+    images = []
+    text_parts = []
 
-    The response from agent.run() is a list of message dicts.
-    We want the final assistant message content.
+    for msg in messages:
+        if msg.get("role") == "user":
+            content = msg.get("content", [])
+            if isinstance(content, str):
+                text_parts.append(content)
+            elif isinstance(content, list):
+                for item in content:
+                    if item.get("type") == "image":
+                        img_data = item.get("image") or item.get("image_url", {}).get("url", "")
+                        if img_data:
+                            images.append(decode_image(img_data))
+                    elif item.get("type") == "text":
+                        text_parts.append(item.get("text", ""))
+
+    return images, " ".join(text_parts)
+
+
+def extract_observations(text: str) -> str:
+    """Extract observations/analysis section from Pass 1 output"""
+    # Try Observations first (image mode), then Analysis (text-only mode)
+    match = re.search(r'## Observations\s*([\s\S]*?)$', text)
+    if not match:
+        match = re.search(r'## Analysis\s*([\s\S]*?)$', text)
+    return match.group(1).strip() if match else text
+
+
+def extract_analysis(text: str) -> str:
+    """Extract analysis section from chat Pass 1 output"""
+    match = re.search(r'## Analysis\s*([\s\S]*?)$', text)
+    return match.group(1).strip() if match else text
+
+
+def query_rag(queries: list) -> str:
+    """Query FDAM RAG for each query, combine results"""
+    if not queries:
+        return "No specific FDAM methodology requested."
+
+    results = []
+    for query in queries:
+        try:
+            print(f"[RAG] Querying: {query}")
+            response = requests.post(
+                RAG_URL,
+                json={"query": query, "maxChunks": 3},
+                timeout=15,
+                headers={"Content-Type": "application/json"}
+            )
+            if response.ok:
+                data = response.json()
+                if data.get("success"):
+                    context = data["data"]["context"]
+                    chunks = data["data"].get("chunks", 0)
+                    print(f"[RAG] Retrieved {chunks} chunks for '{query}'")
+                    results.append(f"### Query: {query}\n{context}")
+                else:
+                    print(f"[RAG] Query failed: {data.get('error', 'Unknown')}")
+            else:
+                print(f"[RAG] HTTP error: {response.status_code}")
+        except Exception as e:
+            print(f"[RAG] Error querying '{query}': {e}")
+
+    return "\n\n".join(results) if results else "RAG query failed - proceed with caution."
+
+
+# Deterministic RAG queries - handler controlled, not model generated
+# ALL queries verified against CF Workers AI Search on Jan 17, 2026
+BASE_RAG_QUERIES = [
+    "burn zone near-field far-field fire damage area definitions",  # Zone definitions
+    "surface disposition matrix clean remove porous non-porous",     # Disposition matrix
+    "particulate clearance thresholds ash char aciniform soot",      # 150/500 thresholds
+]
+
+CONTEXTUAL_QUERIES = {
+    "metal": "metals clearance lead cadmium arsenic BNL thresholds",                    # BNL SOP
+    "ceiling": "roof deck joists beams fire damage steel structure cleaning",           # 82.4% pass rate
+    "deck": "roof deck joists beams fire damage steel structure cleaning",              # Alternate keyword
+    "hvac": "HVAC duct cleaning NADCA ACR standards restoration",                       # NADCA ACR, 4 ACH
+    "duct": "HVAC duct cleaning NADCA ACR standards restoration",                       # Alternate keyword
+    "sample": "sampling protocol density per square foot fire damage verification",     # Density tables
+    "clean": "standard cleaning sequence protocol methods",                             # Cleaning protocols
+}
+
+
+def get_rag_queries(user_text: str, observations: str = "") -> list:
     """
-    if not response_list:
-        return ""
+    Deterministic RAG query selection.
 
-    # Get the last response
-    last_response = response_list[-1] if response_list else {}
+    Always includes base methodology queries.
+    Adds contextual queries based on keywords in user request or observations.
+    """
+    queries = BASE_RAG_QUERIES.copy()
 
-    # Handle different response formats
-    if isinstance(last_response, dict):
-        content = last_response.get('content', '')
-        if isinstance(content, str):
-            return content
-        elif isinstance(content, list):
-            # Content is a list of content blocks
-            text_parts = []
-            for item in content:
-                if isinstance(item, dict):
-                    if item.get('type') == 'text':
-                        text_parts.append(item.get('text', ''))
-                    elif 'text' in item:
-                        text_parts.append(item.get('text', ''))
-                elif isinstance(item, str):
-                    text_parts.append(item)
-            return ' '.join(text_parts)
-    elif isinstance(last_response, str):
-        return last_response
+    # Combine user text and observations for keyword matching
+    search_text = f"{user_text} {observations}".lower()
 
-    return ""
+    for keyword, query in CONTEXTUAL_QUERIES.items():
+        if keyword in search_text and query not in queries:
+            queries.append(query)
+
+    return queries[:5]  # Max 5 queries
+
+
+def generate(user_text: str, images: list, system_prompt: str, max_tokens: int) -> str:
+    """Run generation with given user text, images, and system prompt"""
+    # Build content list for user message
+    # Images first, then text (matching HF space pattern)
+    content = []
+    for _ in images:
+        content.append({"type": "image"})
+    content.append({"type": "text", "text": user_text})
+
+    # Build messages with system prompt
+    formatted_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": content}
+    ]
+
+    # Apply chat template
+    prompt = processor.apply_chat_template(
+        formatted_messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+
+    # Process inputs
+    inputs = processor(
+        text=[prompt],
+        images=images if images else None,
+        return_tensors="pt",
+        padding=True
+    ).to(model.device)
+
+    # Generate
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_tokens,
+            do_sample=True,
+            temperature=0.6,
+            top_p=0.9,
+            top_k=50,
+            repetition_penalty=1.2
+        )
+
+    # Decode (skip input tokens)
+    generated = outputs[0][inputs["input_ids"].shape[1]:]
+    return processor.decode(generated, skip_special_tokens=True)
 
 
 def handler(job):
-    """
-    Process image analysis requests using Qwen-Agent with fdam_rag tool.
-
-    Input format:
-    {
-        "messages": [
-            {"role": "user", "content": [
-                {"type": "image", "image": "data:image/jpeg;base64,..."},
-                {"type": "text", "text": "Analyze this fire damage."}
-            ]}
-        ],
-        "max_tokens": 8000,
-        "session_context": "..." (optional, for chat mode)
-    }
-
-    Output format:
-    {
-        "output": "Assessment report..."
-    }
-    """
+    """Two-pass generation handler"""
     try:
-        from qwen_agent.agents import FnCallAgent
-
         job_input = job["input"]
         messages = job_input.get("messages", [])
-        max_tokens = job_input.get("max_tokens", 8000)
+        max_tokens = job_input.get("max_tokens", 4096)
         session_context = job_input.get("session_context", "")
 
         if not messages:
             return {"error": "No messages provided"}
 
-        # Select system prompt based on mode
+        images, user_text = extract_images_and_text(messages)
+        print(f"[Handler] Processing {len(images)} images, text: {user_text[:100]}...")
+
         if session_context:
-            system_message = CHAT_SYSTEM_PROMPT.format(session_context=session_context)
+            # === CHAT MODE ===
+            return handle_chat(images, user_text, session_context, max_tokens)
         else:
-            system_message = ANALYSIS_SYSTEM_PROMPT
-
-        print(f"[Handler] Creating FnCallAgent with fdam_rag tool")
-        print(f"[Handler] Processing {len(messages)} messages, max_tokens={max_tokens}")
-
-        # Create per-request LLM config with max_tokens from request
-        # Note: OpenAI API uses 'max_tokens', NOT 'max_new_tokens' (HuggingFace param)
-        llm_cfg = {
-            **LLM_CFG,
-            'generate_cfg': {
-                **LLM_CFG['generate_cfg'],
-                'max_tokens': max_tokens,
-            }
-        }
-
-        # Debug: Log the full generate_cfg to trace max_new_tokens source
-        print(f"[Debug] llm_cfg generate_cfg: {llm_cfg.get('generate_cfg', {})}")
-
-        # Create agent with FDAM RAG tool
-        # Reference: qwen2vl_assistant_tooluse.py pattern
-        agent = FnCallAgent(
-            llm=llm_cfg,
-            function_list=['fdam_rag'],
-            name='SmokeScan FDAM Agent',
-            system_message=system_message,
-        )
-
-        # Convert messages to Qwen-Agent format if needed
-        # Qwen-Agent expects: [{'image': url}, {'text': query}] not [{'type': 'image', ...}]
-        formatted_messages = []
-        for msg in messages:
-            if msg.get('role') == 'user':
-                content = msg.get('content', '')
-                if isinstance(content, list):
-                    # Convert OpenAI format to Qwen-Agent format
-                    new_content = []
-                    for item in content:
-                        if item.get('type') == 'image':
-                            # Handle both 'image' and 'image_url' keys
-                            img = item.get('image') or item.get('image_url', {}).get('url', '')
-                            if img:
-                                new_content.append({'image': img})
-                        elif item.get('type') == 'text':
-                            new_content.append({'text': item.get('text', '')})
-                        elif 'image' in item:
-                            new_content.append({'image': item['image']})
-                        elif 'text' in item:
-                            new_content.append({'text': item['text']})
-                    formatted_messages.append({'role': 'user', 'content': new_content})
-                else:
-                    formatted_messages.append(msg)
-            else:
-                formatted_messages.append(msg)
-
-        # Run agent - returns list of response messages
-        print(f"[Handler] Running agent with {len(formatted_messages)} formatted messages")
-        response_list = list(agent.run(messages=formatted_messages))
-
-        # Extract text from response
-        response_text = extract_response_text(response_list)
-
-        if not response_text:
-            # Try alternative extraction
-            for resp in reversed(response_list):
-                if isinstance(resp, list):
-                    for item in resp:
-                        if isinstance(item, dict) and item.get('role') == 'assistant':
-                            response_text = item.get('content', '')
-                            if response_text:
-                                break
-                if response_text:
-                    break
-
-        if not response_text:
-            return {"error": "No response generated by model"}
-
-        # Strip <think> blocks before returning to user
-        response_text = strip_think_blocks(response_text)
-
-        print(f"[Handler] Generated response: {len(response_text)} chars")
-        return {"output": response_text}
+            # === ANALYSIS MODE ===
+            return handle_analysis(images, user_text, max_tokens)
 
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
         print(f"[Handler] Error: {e}\n{error_trace}")
-        return {
-            "error": str(e),
-            "traceback": error_trace
-        }
+        return {"error": str(e), "traceback": error_trace}
 
 
-print("[Handler] Qwen-Agent FnCallAgent Handler initialized")
-print("[Handler] Waiting for vLLM server to start...")
+def handle_analysis(images: list, user_text: str, max_tokens: int) -> dict:
+    """Handle initial fire damage analysis (two-pass)"""
+
+    if len(images) > MAX_IMAGES:
+        return {"error": f"Too many images ({len(images)}). Maximum is {MAX_IMAGES}."}
+
+    # === PASS 1: Select prompt based on image presence ===
+    if images:
+        pass1_prompt = PASS1_SYSTEM_PROMPT
+        img_word = "image" if len(images) == 1 else "images"
+        print(f"[Handler] Pass 1: Analyzing {len(images)} {img_word} as unified space...")
+    else:
+        pass1_prompt = PASS1_TEXT_ONLY_PROMPT
+        print("[Handler] Pass 1: Text-only query, identifying RAG needs...")
+
+    pass1_output = generate(
+        user_text=user_text,
+        images=images,
+        system_prompt=pass1_prompt,
+        max_tokens=1024
+    )
+    print(f"[Handler] Pass 1 output: {pass1_output[:500]}...")
+
+    # === RAG FETCH (Deterministic) ===
+    observations = extract_observations(pass1_output)
+    rag_queries = get_rag_queries(user_text, observations)
+    print(f"[Handler] Deterministic RAG queries: {rag_queries}")
+
+    rag_context = query_rag(rag_queries)
+
+    # === PASS 2: Select prompt based on image presence ===
+    if images:
+        pass2_prompt = PASS2_SYSTEM_PROMPT_TEMPLATE.format(
+            rag_context=rag_context,
+            observations=observations
+        )
+        view_word = "view" if len(images) == 1 else "views"
+        pass2_user_text = f"Generate PRE report for this space ({len(images)} {view_word}). User request: {user_text}"
+        print("[Handler] Pass 2: Generating PRE report...")
+    else:
+        pass2_prompt = PASS2_TEXT_ONLY_PROMPT.format(
+            rag_context=rag_context,
+            observations=observations
+        )
+        pass2_user_text = f"Answer: {user_text}"
+        print("[Handler] Pass 2: Generating direct answer...")
+
+    final_output = generate(
+        user_text=pass2_user_text,
+        images=images,
+        system_prompt=pass2_prompt,
+        max_tokens=max_tokens
+    )
+
+    print(f"[Handler] Final output: {len(final_output)} chars")
+    return {"output": final_output}
+
+
+def handle_chat(images: list, user_text: str, session_context: str, max_tokens: int) -> dict:
+    """Handle follow-up chat questions (two-pass)"""
+
+    # === PASS 1: Determine needed RAG context ===
+    pass1_prompt = CHAT_PASS1_PROMPT_TEMPLATE.format(session_context=session_context)
+
+    print("[Handler] Chat Pass 1: Analyzing question...")
+    pass1_output = generate(
+        user_text=user_text,
+        images=images,
+        system_prompt=pass1_prompt,
+        max_tokens=512
+    )
+    print(f"[Handler] Chat Pass 1 output: {pass1_output[:500]}...")
+
+    # === RAG FETCH (Deterministic) ===
+    analysis = extract_analysis(pass1_output)
+    rag_queries = get_rag_queries(user_text, analysis)
+    print(f"[Handler] Chat deterministic RAG queries: {rag_queries}")
+
+    rag_context = query_rag(rag_queries)
+
+    # === PASS 2: Answer Question ===
+    pass2_prompt = CHAT_PASS2_PROMPT_TEMPLATE.format(
+        session_context=session_context,
+        rag_context=rag_context,
+        analysis=analysis
+    )
+
+    print("[Handler] Chat Pass 2: Generating answer...")
+    final_output = generate(
+        user_text=user_text,
+        images=images,
+        system_prompt=pass2_prompt,
+        max_tokens=max_tokens
+    )
+
+    print(f"[Handler] Chat output: {len(final_output)} chars")
+    return {"output": final_output}
+
+
+# Load model at startup
+print("[Handler] Initializing SmokeScan Two-Pass Handler...")
+load_model()
+print("[Handler] Handler ready, starting RunPod serverless...")
 runpod.serverless.start({"handler": handler})
