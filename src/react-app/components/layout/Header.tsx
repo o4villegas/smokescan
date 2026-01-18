@@ -27,9 +27,11 @@ export function Header({ onMenuClick, className }: HeaderProps) {
 
       {/* Branding - mobile only */}
       <div className="flex items-center gap-2">
-        <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-          <span className="text-primary-foreground font-bold text-sm">SS</span>
-        </div>
+        <img
+          src="/smokescan-logo.png"
+          alt="SmokeScan"
+          className="h-8 w-8 rounded-lg object-contain"
+        />
         <div>
           <h1 className="text-lg font-semibold">SmokeScan</h1>
           <p className="text-xs text-muted-foreground">FDAM Assessment</p>

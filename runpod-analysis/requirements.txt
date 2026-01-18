@@ -1,0 +1,8 @@
+transformers==4.57.1
+torch>=2.4.0
+accelerate>=0.34.0
+qwen-vl-utils>=0.0.14
+runpod
+requests
+Pillow
+sentencepiece

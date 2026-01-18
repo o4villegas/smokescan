@@ -175,56 +175,156 @@ function extractVisionSummary(reportText: string): VisionAnalysisOutput {
 }
 
 /**
- * Parse the LLM report output into structured format
+ * Parse the LLM report output into structured format.
+ *
+ * Model outputs sections per PASS2_SYSTEM_PROMPT_TEMPLATE in handler.py:
+ * 1. Executive Summary
+ * 2. Zone Classification
+ * 3. Surface Assessment
+ * 4. Disposition
+ * 5. Sampling Recommendations
  */
 function parseReport(reportText: string): AssessmentReport {
-  // Extract sections from the report text
-
-  const sections = {
+  const sections: AssessmentReport = {
     executiveSummary: '',
-    detailedAssessment: [] as AssessmentReport['detailedAssessment'],
-    fdamRecommendations: [] as string[],
-    restorationPriority: [] as AssessmentReport['restorationPriority'],
-    scopeIndicators: [] as string[],
+    detailedAssessment: [],
+    fdamRecommendations: [],
+    restorationPriority: [],
+    scopeIndicators: [],
   };
 
-  // Extract executive summary (first paragraph or section)
-  const summaryMatch = reportText.match(
-    /(?:executive\s+summary|summary)[:\s]*\n?([\s\S]*?)(?=\n##|\n\*\*|$)/i
-  );
-  if (summaryMatch) {
-    sections.executiveSummary = summaryMatch[1].trim().slice(0, 500);
+  // Helper to extract section content between headers
+  // Handles: "## 1. Executive Summary", "## Executive Summary", "**Executive Summary**", "1. Executive Summary"
+  function extractSection(sectionName: string): string {
+    const patterns = [
+      // ## 1. Section Name or ## Section Name
+      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[:\\s]*\\n([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      // **Section Name** or **1. Section Name**
+      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}\\*\\*[:\\s]*\\n?([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      // 1. Section Name (numbered without markdown)
+      new RegExp(`\\d+\\.\\s*${sectionName}[:\\s]*\\n([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+    ];
+
+    for (const pattern of patterns) {
+      const match = reportText.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    return '';
+  }
+
+  // Helper to extract severity from text
+  function extractSeverity(text: string): 'heavy' | 'moderate' | 'light' | 'trace' | 'none' {
+    const lowerText = text.toLowerCase();
+    if (/\b(heavy|severe|significant)\b/.test(lowerText)) return 'heavy';
+    if (/\bmoderate\b/.test(lowerText)) return 'moderate';
+    if (/\blight\b/.test(lowerText)) return 'light';
+    if (/\btrace\b/.test(lowerText)) return 'trace';
+    if (/\b(none|clean|no\s+damage)\b/.test(lowerText)) return 'none';
+    return 'moderate'; // Default
+  }
+
+  // Helper to extract bullet points from section
+  function extractBulletPoints(text: string): string[] {
+    const lines = text.split('\n');
+    const bullets: string[] = [];
+
+    for (const line of lines) {
+      // Match lines starting with -, *, •, or numbered items
+      const match = line.match(/^\s*[-•*]\s*(.+)$/) || line.match(/^\s*\d+\.\s*(.+)$/);
+      if (match && match[1].trim()) {
+        bullets.push(match[1].trim());
+      }
+    }
+
+    return bullets.length > 0 ? bullets : text.split(/[.!?]+/).filter(s => s.trim().length > 10).slice(0, 5);
+  }
+
+  // 1. Extract Executive Summary
+  const summaryContent = extractSection('Executive Summary');
+  if (summaryContent) {
+    sections.executiveSummary = summaryContent.slice(0, 800);
   } else {
-    // Use first 2-3 sentences as summary
-    const sentences = reportText.split(/[.!?]+/).slice(0, 3);
-    sections.executiveSummary = sentences.join('. ').trim() + '.';
+    // Fallback: use first paragraph
+    const firstPara = reportText.split(/\n\n/)[0];
+    sections.executiveSummary = firstPara ? firstPara.trim().slice(0, 500) : 'Assessment report generated.';
   }
 
-  // Extract FDAM recommendations
-  const recMatch = reportText.match(
-    /(?:fdam|recommendations?|protocol)[:\s]*\n?([\s\S]*?)(?=\n##|\n\*\*[A-Z]|$)/i
-  );
-  if (recMatch) {
-    sections.fdamRecommendations = recMatch[1]
-      .split(/\n[-•*]\s*/)
-      .filter((r) => r.trim().length > 0)
-      .map((r) => r.trim())
-      .slice(0, 10);
+  // 2. Extract Zone Classification → detailedAssessment[0]
+  const zoneContent = extractSection('Zone Classification');
+  if (zoneContent) {
+    sections.detailedAssessment.push({
+      area: 'Zone Classification',
+      findings: zoneContent.slice(0, 1000),
+      severity: extractSeverity(zoneContent),
+      recommendations: extractBulletPoints(zoneContent).slice(0, 5),
+    });
   }
 
-  // Extract scope indicators
-  const scopeMatch = reportText.match(
-    /(?:scope|indicators?)[:\s]*\n?([\s\S]*?)(?=\n##|\n\*\*[A-Z]|$)/i
-  );
-  if (scopeMatch) {
-    sections.scopeIndicators = scopeMatch[1]
-      .split(/\n[-•*]\s*/)
-      .filter((s) => s.trim().length > 0)
-      .map((s) => s.trim())
-      .slice(0, 10);
+  // 3. Extract Surface Assessment → detailedAssessment[1]
+  const surfaceContent = extractSection('Surface Assessment');
+  if (surfaceContent) {
+    sections.detailedAssessment.push({
+      area: 'Surface Assessment',
+      findings: surfaceContent.slice(0, 1000),
+      severity: extractSeverity(surfaceContent),
+      recommendations: extractBulletPoints(surfaceContent).slice(0, 5),
+    });
   }
 
-  // If we couldn't parse structured sections, create minimal structure
+  // 4. Extract Disposition → restorationPriority
+  const dispositionContent = extractSection('Disposition');
+  if (dispositionContent) {
+    const bullets = extractBulletPoints(dispositionContent);
+    let priority = 1;
+
+    for (const bullet of bullets.slice(0, 10)) {
+      // Try to determine action type from content
+      let action = 'Assess';
+      const lowerBullet = bullet.toLowerCase();
+      if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) {
+        action = 'Remove';
+      } else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(lowerBullet)) {
+        action = 'Clean';
+      } else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) {
+        action = 'No Action';
+      }
+
+      sections.restorationPriority.push({
+        priority: priority++,
+        area: bullet.split(/[,.:]/)[0].slice(0, 50) || `Item ${priority - 1}`,
+        action,
+        rationale: bullet,
+      });
+    }
+  }
+
+  // 5. Extract Sampling Recommendations → scopeIndicators + fdamRecommendations
+  const samplingContent = extractSection('Sampling Recommendations') || extractSection('Sampling');
+  if (samplingContent) {
+    const bullets = extractBulletPoints(samplingContent);
+    sections.scopeIndicators = bullets.slice(0, 10);
+    sections.fdamRecommendations = bullets.slice(0, 10);
+  }
+
+  // Also try to extract any general recommendations section
+  const generalRecContent = extractSection('Recommendations') || extractSection('FDAM Recommendations');
+  if (generalRecContent && sections.fdamRecommendations.length === 0) {
+    sections.fdamRecommendations = extractBulletPoints(generalRecContent).slice(0, 10);
+  }
+
+  // Fallbacks if sections are empty
+  if (sections.detailedAssessment.length === 0) {
+    // Try to create assessment from any structured content
+    sections.detailedAssessment.push({
+      area: 'General Assessment',
+      findings: sections.executiveSummary || 'Assessment pending detailed analysis.',
+      severity: extractSeverity(reportText),
+      recommendations: ['Review detailed findings', 'Conduct follow-up inspection as needed'],
+    });
+  }
+
   if (sections.fdamRecommendations.length === 0) {
     sections.fdamRecommendations = [
       'Conduct detailed sampling per FDAM protocols',
@@ -233,11 +333,20 @@ function parseReport(reportText: string): AssessmentReport {
     ];
   }
 
+  if (sections.restorationPriority.length === 0) {
+    sections.restorationPriority.push({
+      priority: 1,
+      area: 'General',
+      action: 'Assess',
+      rationale: 'Complete detailed assessment before restoration planning',
+    });
+  }
+
   if (sections.scopeIndicators.length === 0) {
     sections.scopeIndicators = [
       'Visual assessment completed',
-      'Damage inventory documented',
       'Zone classification assigned',
+      'Disposition recommendations provided',
     ];
   }
 

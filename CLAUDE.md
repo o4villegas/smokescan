@@ -18,7 +18,7 @@
 | Topic | Source |
 |-------|--------|
 | FDAM Methodology | `RAG-KB/FDAM_v4_METHODOLOGY.md` |
-| Qwen3-VL Patterns | https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking |
+| Qwen3-VL Patterns | https://huggingface.co/Qwen/Qwen3-VL-32B-Instruct |
 | Cloudflare AutoRAG | https://developers.cloudflare.com/ai-search/ |
 | RunPod Serverless API | https://docs.runpod.io/serverless/endpoints/send-requests |
 | Deployment | Git push triggers Cloudflare auto-deploy (NO manual wrangler) |
@@ -37,7 +37,7 @@
 - **Backend:** Hono + Cloudflare Workers
 - **Testing:** Vitest (unit/integration) + Playwright (browser/runtime)
 - **Package Manager:** npm (exclusively)
-- **Image Processing:** RunPod (qWEN3 30B VL model for vision, qWEN3 reranker/embedding for RAG)
+- **Image Processing:** RunPod (Qwen3-VL-30B for vision) + Cloudflare AI Search (RAG)
 
 ---
 
@@ -405,6 +405,7 @@ Agents should **proactively recommend** these commands when appropriate:
 - Use package managers other than npm (no bun, yarn, pnpm)
 - Run `wrangler deploy` manually - deployment is via GitHub push (auto-deploy)
 - Mark deployment complete without reviewing Cloudflare build logs
+- Use bleeding edge transformers (`git+...`) or versions released after Jan 16, 2026 - must pin to `transformers==4.57.1` (see RunPod section for version table)
 
 ---
 
@@ -412,18 +413,43 @@ Agents should **proactively recommend** these commands when appropriate:
 
 ### RunPod Image Processing
 
-For bulk image processing (damage assessment images):
-- **Vision Model:** Qwen3-VL-30B-A3B-Thinking
-- **RAG:** Qwen3 reranker + Qwen3 embedding models
+For fire damage image analysis:
+- **Vision Model:** Qwen3-VL-32B-Instruct (~65GB, Dense architecture)
+- **Inference:** Direct transformers (no vLLM)
+- **RAG:** Two-pass generation with contextual Cloudflare AI Search queries
 
-Image processing workflows will use RunPod serverless endpoints.
+**Architecture: Two-Pass Generation**
+```
+Request (images + prompt)
+         │
+         ▼
+┌─────────────────────────────────────┐
+│  PASS 1: Observation & RAG Queries  │
+│  - Model analyzes images            │
+│  - Outputs structured observations  │
+│  - Lists specific RAG queries       │
+└─────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────┐
+│  RAG FETCH                          │
+│  - Parse queries from Pass 1        │
+│  - Query Cloudflare AI Search       │
+│  - Collect FDAM methodology chunks  │
+└─────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────┐
+│  PASS 2: Full Assessment            │
+│  - System prompt with RAG context   │
+│  - Pass 1 observations included     │
+│  - Generate complete PRE report     │
+└─────────────────────────────────────┘
+```
 
 **Environment Variables (see `.env` file):**
 - `RUNPOD_API_KEY` - API key for RunPod authentication
-- `RUNPOD_RETRIEVAL_ENDPOINT_ID` - Retrieval endpoint (Embedding + Reranking, ~32GB VRAM)
-- `RUNPOD_ANALYSIS_ENDPOINT_ID` - Analysis endpoint (Vision reasoning, ~40GB VRAM)
-
-**Architecture:** "Retrieve First, Reason Last" - split endpoints for better scaling and cost efficiency.
+- `RUNPOD_ANALYSIS_ENDPOINT_ID` - Analysis endpoint (Vision reasoning)
 
 **Note:** `.env` is gitignored. Use `.env.example` as template.
 
@@ -440,13 +466,13 @@ Image processing workflows will use RunPod serverless endpoints.
 **Build Command (provide to user):**
 ```powershell
 # Run from any PowerShell location - uses full WSL path
-docker build -t gvo555/smokescan-retrieval:vX \\wsl$\Ubuntu\home\lando555\smokescan\runpod-retrieval
+docker build -t gvo555/smokescan-analysis:vX \\wsl$\Ubuntu\home\lando555\smokescan\runpod-analysis
 ```
 
 **Push Command (provide to user):**
 ```powershell
 # Run from PowerShell after build completes
-docker push gvo555/smokescan-retrieval:vX
+docker push gvo555/smokescan-analysis:vX
 ```
 
 **Why PowerShell with full paths?**
@@ -455,20 +481,50 @@ docker push gvo555/smokescan-retrieval:vX
 - Full paths eliminate need to navigate directories first
 
 **Version Tracking:**
-- Current retrieval image: `gvo555/smokescan-retrieval:v4` (34.3GB, optimized)
+- Current analysis image: `gvo555/smokescan-analysis:v3-transformers`
 - Always increment version number for new builds
 - Document what changed in each version
 
+| Version | Date | Changes |
+|---------|------|---------|
+| v3-transformers | Jan 2026 | Fixed `pad_token_id` error by pinning `transformers==4.57.1` |
+| v1 | Initial | First working build with bleeding edge transformers (later broken) |
+
 **Qwen3-VL Authoritative References (USE THESE - do not deviate):**
-- Model Card: https://huggingface.co/Qwen/Qwen3-VL-30B-A3B-Thinking
+- Model Card: https://huggingface.co/Qwen/Qwen3-VL-32B-Instruct
 - Research Paper: https://huggingface.co/papers/2505.09388
 - GitHub Repo: https://github.com/QwenLM/Qwen3-VL
+- Working Reference: https://huggingface.co/spaces/KinetoLabs/Qwen3-VL-Demo-SmokeTest
 
 When implementing Qwen3-VL features, ALWAYS reference these sources for:
 - Prompting patterns and templates
 - Input/output formats
 - Configuration options
 - Best practices
+
+**Key Implementation Notes:**
+- Use `Qwen3VLForConditionalGeneration` class (Dense architecture)
+- Use `AutoProcessor` for tokenization and image processing
+- Use `flash_attention_2` for multi-image performance
+- Direct `model.generate()` - no vLLM intermediary
+
+**CRITICAL - Transformers Version Pinning:**
+```
+transformers==4.57.1  # DO NOT use bleeding edge or main branch
+```
+
+**Why this matters:** On Jan 16, 2026, [PR #41541](https://github.com/huggingface/transformers/pull/41541) removed `pad_token_id` from the base `PreTrainedConfig` class. This causes `AttributeError: 'Qwen3VLTextConfig' object has no attribute 'pad_token_id'` when loading Qwen3-VL models with newer transformers versions.
+
+| Version | Release Date | Status | Notes |
+|---------|--------------|--------|-------|
+| `transformers==4.57.1` | Oct 14, 2025 | ✅ **USE THIS** | Matches KinetoLabs working reference |
+| `transformers==4.57.2` | Nov 24, 2025 | ✅ Safe | Before PR #41541 |
+| `transformers==4.57.3` | Nov 25, 2025 | ✅ Safe | Before PR #41541 |
+| `transformers==4.57.6` | Jan 16, 2026 | ⚠️ UNTESTED | Same day as PR merge - avoid |
+| `git+...transformers.git` | N/A | ❌ BROKEN | Contains breaking PR #41541 |
+| `transformers>=5.0` | Jan 2026+ | ⚠️ UNTESTED | Major version - verify before use |
+
+**Evidence:** KinetoLabs demo (our authoritative reference) pins to 4.57.1 and works without config patching. We tested and confirmed 4.57.1 works on Jan 17, 2026.
 
 ### Cloudflare AutoRAG
 

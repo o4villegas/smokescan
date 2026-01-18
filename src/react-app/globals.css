@@ -4,45 +4,49 @@
 
 @layer base {
   :root {
-    /* Dark theme (default - no light mode) */
-    --background: 222 47% 6%;
+    /* Dark theme (default - no light mode) - Fire/Charcoal Theme */
+    --background: 220 13% 10%;
     --foreground: 210 40% 98%;
 
     /* Card/elevated surfaces */
-    --card: 222 47% 11%;
+    --card: 220 13% 13%;
     --card-foreground: 210 40% 98%;
 
     /* Popover (dialogs, dropdowns) */
-    --popover: 222 47% 9%;
+    --popover: 220 13% 11%;
     --popover-foreground: 210 40% 98%;
 
-    /* Primary (SmokeScan brand blue) */
-    --primary: 217 91% 60%;
+    /* Primary (SmokeScan fire orange) */
+    --primary: 14 100% 57%;
     --primary-foreground: 0 0% 100%;
 
     /* Secondary */
-    --secondary: 217 33% 17%;
+    --secondary: 220 9% 20%;
     --secondary-foreground: 210 40% 98%;
 
     /* Muted */
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 220 9% 20%;
+    --muted-foreground: 220 9% 60%;
 
-    /* Accent */
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
+    /* Accent (warm orange) */
+    --accent: 25 95% 53%;
+    --accent-foreground: 0 0% 100%;
 
     /* Semantic - Destructive */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
     /* Border and input */
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 217 91% 60%;
+    --border: 220 9% 22%;
+    --input: 220 9% 22%;
+    --ring: 14 100% 57%;
 
     /* Radius */
     --radius: 0.5rem;
+
+    /* Metallic chrome accent */
+    --chrome: 220 9% 70%;
+    --chrome-foreground: 220 13% 10%;
 
     /* Zone colors (FDAM) */
     --zone-burn: 0 84% 60%;
@@ -54,11 +58,11 @@
     --severity-moderate: 25 95% 53%;
     --severity-light: 48 96% 53%;
     --severity-trace: 142 76% 36%;
-    --severity-none: 217 33% 50%;
+    --severity-none: 220 9% 50%;
 
-    /* Glass effect variables */
-    --glass-bg: rgba(30, 41, 59, 0.7);
-    --glass-border: rgba(148, 163, 184, 0.1);
+    /* Glass effect variables - charcoal tint */
+    --glass-bg: rgba(46, 49, 54, 0.7);
+    --glass-border: rgba(168, 173, 181, 0.1);
     --glass-blur: 12px;
   }
 }
@@ -84,8 +88,8 @@
   }
 
   .glass-hover:hover {
-    background: rgba(30, 41, 59, 0.85);
-    border-color: rgba(148, 163, 184, 0.2);
+    background: rgba(46, 49, 54, 0.85);
+    border-color: rgba(168, 173, 181, 0.2);
   }
 
   /* Zone badge utilities */
@@ -144,5 +148,18 @@
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground));
+  }
+
+  /* Chrome/metallic accent utilities */
+  .text-chrome {
+    color: hsl(var(--chrome));
+  }
+
+  .bg-chrome {
+    background-color: hsl(var(--chrome));
+  }
+
+  .border-chrome {
+    border-color: hsl(var(--chrome));
   }
 }

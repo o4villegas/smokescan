@@ -104,23 +104,16 @@ export function getTestImageMetadata(
  */
 export function getRunPodConfig(): {
   apiKey: string;
-  retrievalEndpointId: string;
   analysisEndpointId: string;
 } {
   const apiKey = process.env.RUNPOD_API_KEY;
-  const retrievalEndpointId = process.env.RUNPOD_RETRIEVAL_ENDPOINT_ID;
   const analysisEndpointId = process.env.RUNPOD_ANALYSIS_ENDPOINT_ID;
 
-  if (!apiKey || !retrievalEndpointId) {
+  if (!apiKey || !analysisEndpointId) {
     throw new Error(
-      'Missing required environment variables: RUNPOD_API_KEY, RUNPOD_RETRIEVAL_ENDPOINT_ID'
+      'Missing required environment variables: RUNPOD_API_KEY, RUNPOD_ANALYSIS_ENDPOINT_ID'
     );
   }
 
-  return {
-    apiKey,
-    retrievalEndpointId,
-    // Analysis endpoint is optional for embedding tests
-    analysisEndpointId: analysisEndpointId || '',
-  };
+  return { apiKey, analysisEndpointId };
 }

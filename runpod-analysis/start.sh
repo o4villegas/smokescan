@@ -1,81 +1,35 @@
 #!/bin/bash
-# SmokeScan Analysis Endpoint - vLLM + Handler startup
-# Serves Qwen3-VL-30B-A3B-Thinking for vision reasoning
+# SmokeScan Analysis Endpoint - Two-Pass Transformers
+# Direct Qwen3-VL-30B-A3B-Instruct inference (no vLLM)
 
 set -e
 
-echo "=========================================="
-echo "SmokeScan Analysis Endpoint Starting..."
-echo "=========================================="
+# Redirect all output to log file AND console for debugging
+if [ -d "/runpod-volume" ]; then
+    exec > >(tee -a /runpod-volume/startup.log) 2>&1
+    echo ""
+    echo "========================================"
+    echo "NEW STARTUP: $(date -Iseconds)"
+    echo "========================================"
+fi
 
-# Configuration
-VLLM_PORT=8000
-MAX_RETRIES=90
-RETRY_INTERVAL=10
-# Total timeout: 15 minutes (sufficient for first-run 60GB model download)
+echo "=========================================="
+echo "SmokeScan Analysis - Two-Pass Transformers"
+echo "Model: Qwen3-VL-32B-Instruct (Dense)"
+echo "=========================================="
 
 # Point HuggingFace cache to network volume (persistent storage)
-# This prevents "No space left on device" errors - model is ~60GB, container disk is 50GB
+# This prevents "No space left on device" errors - model is ~60GB
 if [ -d "/runpod-volume" ]; then
     export HF_HOME="/runpod-volume/huggingface-cache"
-    echo "HuggingFace cache set to: $HF_HOME"
     mkdir -p "$HF_HOME"
+    echo "HuggingFace cache: $HF_HOME"
 fi
 
-# Find cached model or use HuggingFace
-MODEL_PATH="Qwen/Qwen3-VL-30B-A3B-Thinking"
+# Set multiprocessing method for CUDA compatibility
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+echo "Multiprocess method: spawn"
 
-# Check RunPod volume cache first
-CACHE_DIR="/runpod-volume/huggingface-cache/hub/models--Qwen--Qwen3-VL-30B-A3B-Thinking"
-if [ -d "$CACHE_DIR" ]; then
-    SNAPSHOT=$(ls "$CACHE_DIR/snapshots/" 2>/dev/null | head -1)
-    if [ -n "$SNAPSHOT" ]; then
-        MODEL_PATH="$CACHE_DIR/snapshots/$SNAPSHOT"
-        echo "Using cached model: $MODEL_PATH"
-    fi
-else
-    echo "Model not cached, will download from HuggingFace: $MODEL_PATH"
-fi
-
-# Start vLLM server with higher GPU utilization (no competing models)
-echo "Starting vLLM server..."
-python -m vllm.entrypoints.openai.api_server \
-    --model "$MODEL_PATH" \
-    --served-model-name qwen3-vl \
-    --port $VLLM_PORT \
-    --trust-remote-code \
-    --dtype auto \
-    --max-model-len 32768 \
-    --gpu-memory-utilization 0.9 &
-
-VLLM_PID=$!
-echo "vLLM server PID: $VLLM_PID"
-
-# Wait for vLLM server to be ready
-echo "Waiting for vLLM server to be ready..."
-RETRY_COUNT=0
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if curl -s "http://localhost:$VLLM_PORT/health" > /dev/null 2>&1; then
-        echo "vLLM server is ready!"
-        break
-    fi
-
-    # Check if vLLM process is still running
-    if ! kill -0 $VLLM_PID 2>/dev/null; then
-        echo "ERROR: vLLM server process died!"
-        exit 1
-    fi
-
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    echo "  Waiting... ($RETRY_COUNT/$MAX_RETRIES)"
-    sleep $RETRY_INTERVAL
-done
-
-if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo "ERROR: vLLM server failed to start within timeout"
-    exit 1
-fi
-
-# Start the handler
-echo "Starting Analysis handler..."
+# Run handler directly (model loads at startup via load_model())
+echo "Starting handler..."
 exec python -u /app/handler.py

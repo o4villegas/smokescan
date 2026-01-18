@@ -5,10 +5,11 @@
 
 import { useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ImageUpload, MetadataForm, ProcessingView, AssessmentReport } from '../components';
-import type { AssessmentMetadata, AssessmentReport as ReportType } from '../types';
+import { ImageUpload, MetadataForm, ProcessingView, AssessmentReport, ChatInterface } from '../components';
+import { submitAssessment, sendChatMessage } from '../lib/api';
+import type { AssessmentMetadata, AssessmentReport as ReportType, ChatMessage } from '../types';
 
-type WizardStep = 'upload' | 'metadata' | 'processing' | 'complete';
+type WizardStep = 'upload' | 'metadata' | 'processing' | 'complete' | 'chat';
 
 type WizardState = {
   step: WizardStep;
@@ -16,6 +17,8 @@ type WizardState = {
   imagePreviewUrls: string[];
   metadata: AssessmentMetadata | null;
   report: ReportType | null;
+  sessionId: string | null;
+  chatHistory: ChatMessage[];
   isLoading: boolean;
   error: string | null;
   processingTime?: number;
@@ -31,6 +34,8 @@ export function AssessmentWizard() {
     imagePreviewUrls: [],
     metadata: null,
     report: null,
+    sessionId: null,
+    chatHistory: [],
     isLoading: false,
     error: null,
   });
@@ -46,70 +51,15 @@ export function AssessmentWizard() {
     [updateState]
   );
 
-  const uploadImages = useCallback(
-    async (images: File[]): Promise<boolean> => {
-      if (!assessmentId) return false;
-
-      for (const image of images) {
-        const formData = new FormData();
-        formData.append('file', image);
-        formData.append('assessment_id', assessmentId);
-
-        const response = await fetch('/api/images/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        const result = await response.json();
-        if (!result.success) {
-          updateState({ error: `Failed to upload ${image.name}: ${result.error.message}` });
-          return false;
-        }
-      }
-      return true;
-    },
-    [assessmentId, updateState]
-  );
-
   const handleMetadataSubmit = useCallback(
     async (metadata: AssessmentMetadata) => {
       updateState({ metadata, step: 'processing', isLoading: true, error: null });
 
       try {
-        // First upload images to R2
-        const uploaded = await uploadImages(state.images);
-        if (!uploaded) {
-          updateState({ step: 'metadata', isLoading: false });
-          return;
-        }
-
-        // Convert images to base64 for vision API
-        const imagePromises = state.images.map((file) => {
-          return new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const result = reader.result as string;
-              resolve(result.split(',')[1]); // Remove data:image/...;base64, prefix
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-        });
-
-        const base64Images = await Promise.all(imagePromises);
-
-        // Call the assess API
+        // Use api.ts client - it handles base64 conversion with proper data URI format
+        // Backend handles R2 upload using sessionId as prefix
         const startTime = Date.now();
-        const response = await fetch('/api/assess', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            images: base64Images,
-            metadata,
-          }),
-        });
-
-        const result = await response.json();
+        const result = await submitAssessment(state.images, metadata);
         const processingTime = Date.now() - startTime;
 
         if (result.success) {
@@ -128,6 +78,7 @@ export function AssessmentWizard() {
           updateState({
             step: 'complete',
             report: result.data.report,
+            sessionId: result.data.sessionId,
             isLoading: false,
             processingTime,
           });
@@ -146,7 +97,49 @@ export function AssessmentWizard() {
         });
       }
     },
-    [state.images, assessmentId, updateState, uploadImages]
+    [state.images, assessmentId, updateState]
+  );
+
+  const handleChatMessage = useCallback(
+    async (message: string) => {
+      if (!state.sessionId) {
+        updateState({ error: 'No session available for chat' });
+        return;
+      }
+
+      // Add user message to history
+      const userMessage: ChatMessage = { role: 'user', content: message };
+      updateState({
+        chatHistory: [...state.chatHistory, userMessage],
+        isLoading: true,
+      });
+
+      try {
+        const result = await sendChatMessage(state.sessionId, message);
+
+        if (result.success) {
+          const assistantMessage: ChatMessage = {
+            role: 'assistant',
+            content: result.data.response,
+          };
+          updateState({
+            chatHistory: [...state.chatHistory, userMessage, assistantMessage],
+            isLoading: false,
+          });
+        } else {
+          updateState({
+            error: result.error.message,
+            isLoading: false,
+          });
+        }
+      } catch {
+        updateState({
+          error: 'Failed to send message',
+          isLoading: false,
+        });
+      }
+    },
+    [state.sessionId, state.chatHistory, updateState]
   );
 
   const handleComplete = () => {
@@ -217,10 +210,18 @@ export function AssessmentWizard() {
           report={state.report}
           processingTimeMs={state.processingTime}
           onStartChat={() => {
-            // For now, just complete. Chat can be accessed from assessment view.
-            handleComplete();
+            updateState({ step: 'chat' });
           }}
           onNewAssessment={handleComplete}
+        />
+      )}
+
+      {state.step === 'chat' && (
+        <ChatInterface
+          messages={state.chatHistory}
+          onSendMessage={handleChatMessage}
+          onBack={() => updateState({ step: 'complete' })}
+          isLoading={state.isLoading}
         />
       )}
     </div>

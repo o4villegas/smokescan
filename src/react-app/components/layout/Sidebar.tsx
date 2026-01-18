@@ -41,13 +41,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       {/* Logo section for mobile */}
-      <div className="flex h-14 items-center border-b px-4 md:hidden">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">SS</span>
-          </div>
-          <span className="font-semibold">SmokeScan</span>
-        </div>
+      <div className="flex h-52 items-center justify-center border-b px-2 md:hidden">
+        <img
+          src="/smokescan-logo.png"
+          alt="SmokeScan"
+          className="h-48 w-full object-contain"
+        />
       </div>
 
       {/* Navigation */}
@@ -90,16 +89,12 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
     <>
       {/* Desktop sidebar - fixed position */}
       <aside className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-30 md:w-64 md:flex-col md:border-r bg-card">
-        <div className="flex h-14 items-center border-b px-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">SS</span>
-            </div>
-            <div>
-              <span className="font-semibold">SmokeScan</span>
-              <p className="text-xs text-muted-foreground">FDAM Assessment</p>
-            </div>
-          </div>
+        <div className="flex h-52 items-center justify-center border-b px-2">
+          <img
+            src="/smokescan-logo.png"
+            alt="SmokeScan"
+            className="h-48 w-full object-contain"
+          />
         </div>
         <SidebarContent />
       </aside>

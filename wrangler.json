@@ -49,5 +49,8 @@
 	],
 	"ai": {
 		"binding": "AI"
+	},
+	"vars": {
+		"RUNPOD_ANALYSIS_ENDPOINT_ID": "4fu896ozb83lxq"
 	}
 }
