@@ -44,9 +44,12 @@ const RoomDimensionsSchema = z.object({
 });
 
 const SensoryObservationsSchema = z.object({
-  smoke_odor_present: z.boolean(),
-  smoke_odor_intensity: z.enum(['faint', 'noticeable', 'strong']).optional(),
-  white_wipe_result: z.enum(['not-performed', 'clean', 'light-deposits', 'heavy-deposits']).optional(),
+  smoke_odor_present: z.boolean().optional(),
+  smoke_odor_intensity: z.enum(['none', 'faint', 'moderate', 'strong']).optional(),
+  white_wipe_result: z.union([
+    z.enum(['clean', 'light-deposits', 'moderate-deposits', 'heavy-deposits']),
+    z.string().max(100),  // Free text option
+  ]).optional(),
 });
 
 const CreateAssessmentSchema = z.object({
