@@ -8,6 +8,9 @@ import { cors } from 'hono/cors';
 import type { WorkerEnv } from './types';
 import {
   handleAssess,
+  handleAssessSubmit,
+  handleAssessStatus,
+  handleAssessResult,
   handleChat,
   handleHealth,
   handleRagTest,
@@ -74,6 +77,11 @@ app.route('/api/images', imagesRoutes);
 // Legacy assessment endpoint (backward compatible)
 app.post('/api/assess', handleAssess);
 
+// New polling-based assessment endpoints (avoids Cloudflare 30s timeout)
+app.post('/api/assess/submit', handleAssessSubmit);
+app.get('/api/assess/status/:jobId', handleAssessStatus);
+app.get('/api/assess/result/:jobId', handleAssessResult);
+
 // Chat endpoint
 app.post('/api/chat', handleChat);
 
@@ -86,6 +94,9 @@ app.get('/api/', (c) => c.json({
     assessments: '/api/assessments',
     images: '/api/images',
     assess: '/api/assess',
+    assessSubmit: '/api/assess/submit',
+    assessStatus: '/api/assess/status/:jobId',
+    assessResult: '/api/assess/result/:jobId',
     chat: '/api/chat',
     health: '/api/health',
     ragQuery: '/api/rag/query',

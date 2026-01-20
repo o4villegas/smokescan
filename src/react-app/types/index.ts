@@ -30,6 +30,9 @@ export type Phase = 'PRE' | 'PRA' | 'RESTORATION' | 'PRV';
 export type AssessmentStatus = 'draft' | 'in-progress' | 'awaiting-lab' | 'pra-ready' | 'completed';
 export type Disposition = 'clean' | 'remove' | 'no-action' | 'further-assessment';
 
+// Job status for async assessment processing
+export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
 // FDAM fields (human inputs that cannot be determined by photo analysis)
 export type FloorLevel = 'basement' | 'ground' | '1st' | '2nd' | '3rd' | '4th+' | 'attic';
 

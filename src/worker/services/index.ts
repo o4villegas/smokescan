@@ -3,7 +3,7 @@
  * Re-exports all service classes
  */
 
-export { RunPodService } from './runpod';
+export { RunPodService, type RunPodResponse } from './runpod';
 export { RAGService } from './rag';
 export { SessionService } from './session';
 export { DatabaseService } from './database';

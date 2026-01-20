@@ -9,7 +9,7 @@
  */
 
 import type { Context } from 'hono';
-import type { WorkerEnv, AssessmentReport, SessionState, VisionAnalysisOutput } from '../types';
+import type { WorkerEnv, AssessmentReport, SessionState, VisionAnalysisOutput, JobState, JobStatus } from '../types';
 import { AssessmentRequestSchema } from '../schemas';
 import { RunPodService, SessionService, StorageService } from '../services';
 
@@ -138,6 +138,307 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
       sessionId,
       report,
       processingTimeMs,
+    },
+  });
+}
+
+// ============ Client-Side Polling Endpoints ============
+
+const JOB_TTL = 60 * 60; // 1 hour TTL for job state
+
+/**
+ * POST /api/assess/submit
+ * Submit assessment job and return immediately with jobId.
+ * Client polls /api/assess/status/:jobId for completion.
+ */
+export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
+  // Parse and validate request
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(
+      { success: false, error: { code: 400, message: 'Invalid JSON body' } },
+      400
+    );
+  }
+
+  const parsed = AssessmentRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 400,
+          message: 'Validation failed',
+          details: parsed.error.issues,
+        },
+      },
+      400
+    );
+  }
+
+  const { images, metadata } = parsed.data;
+
+  // Initialize services
+  const runpod = new RunPodService({
+    apiKey: c.env.RUNPOD_API_KEY,
+    analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
+  });
+  const sessionService = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
+  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
+
+  // Generate jobId and sessionId
+  const jobId = crypto.randomUUID();
+  const sessionId = sessionService.generateSessionId();
+
+  // Save images to R2 (in parallel)
+  console.log(`[AssessSubmit] Saving ${images.length} images to R2`);
+  const imageR2Keys: string[] = [];
+  const uploadPromises = images.map(async (base64Image, index) => {
+    let contentType = 'image/jpeg';
+    let rawBase64 = base64Image;
+
+    if (base64Image.startsWith('data:')) {
+      const match = base64Image.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        contentType = match[1];
+        rawBase64 = match[2];
+      }
+    }
+
+    const binaryString = atob(rawBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const uploadResult = await storage.uploadImage(
+      sessionId,
+      `image-${index}.${contentType.split('/')[1] || 'jpg'}`,
+      bytes.buffer,
+      contentType
+    );
+
+    if (uploadResult.success) {
+      return uploadResult.data.key;
+    }
+    console.warn(`[AssessSubmit] Failed to upload image ${index}:`, uploadResult.error);
+    return null;
+  });
+
+  const uploadedKeys = await Promise.all(uploadPromises);
+  for (const key of uploadedKeys) {
+    if (key) imageR2Keys.push(key);
+  }
+  console.log(`[AssessSubmit] Saved ${imageR2Keys.length}/${images.length} images to R2`);
+
+  // Submit job to RunPod (non-blocking)
+  console.log(`[AssessSubmit] Submitting job to RunPod`);
+  const submitResult = await runpod.submitJob(images, metadata);
+  if (!submitResult.success) {
+    return c.json(
+      { success: false, error: submitResult.error },
+      submitResult.error.code as 400 | 500
+    );
+  }
+
+  const runpodJobId = submitResult.data;
+
+  // Store job state in KV
+  const jobState: JobState = {
+    jobId,
+    runpodJobId,
+    status: 'pending',
+    sessionId,
+    metadata,
+    imageR2Keys,
+    images, // Store images for result processing
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await c.env.SMOKESCAN_SESSIONS.put(
+    `job:${jobId}`,
+    JSON.stringify(jobState),
+    { expirationTtl: JOB_TTL }
+  );
+
+  console.log(`[AssessSubmit] Job ${jobId} submitted, RunPod ID: ${runpodJobId}`);
+
+  return c.json({
+    success: true,
+    data: { jobId },
+  });
+}
+
+/**
+ * GET /api/assess/status/:jobId
+ * Check job status without blocking.
+ */
+export async function handleAssessStatus(c: Context<{ Bindings: WorkerEnv }>) {
+  const jobId = c.req.param('jobId');
+  if (!jobId) {
+    return c.json(
+      { success: false, error: { code: 400, message: 'Missing jobId parameter' } },
+      400
+    );
+  }
+
+  // Load job state from KV
+  const jobData = await c.env.SMOKESCAN_SESSIONS.get(`job:${jobId}`);
+  if (!jobData) {
+    return c.json(
+      { success: false, error: { code: 404, message: 'Job not found' } },
+      404
+    );
+  }
+
+  const jobState: JobState = JSON.parse(jobData);
+
+  // If already completed or failed, return cached status
+  if (jobState.status === 'completed' || jobState.status === 'failed') {
+    return c.json({
+      success: true,
+      data: {
+        jobId,
+        status: jobState.status,
+        error: jobState.error,
+      },
+    });
+  }
+
+  // Check RunPod status
+  const runpod = new RunPodService({
+    apiKey: c.env.RUNPOD_API_KEY,
+    analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
+  });
+
+  const statusResult = await runpod.getJobStatus(jobState.runpodJobId);
+  if (!statusResult.success) {
+    return c.json({
+      success: true,
+      data: {
+        jobId,
+        status: jobState.status, // Return last known status
+      },
+    });
+  }
+
+  const runpodStatus = statusResult.data.status;
+
+  // Map RunPod status to our JobStatus
+  let newStatus: JobStatus = jobState.status;
+  let error: string | undefined;
+
+  if (runpodStatus === 'COMPLETED') {
+    newStatus = 'completed';
+  } else if (runpodStatus === 'FAILED') {
+    newStatus = 'failed';
+    error = statusResult.data.error || 'Job failed';
+  } else if (runpodStatus === 'IN_PROGRESS') {
+    newStatus = 'in_progress';
+  } else if (runpodStatus === 'IN_QUEUE') {
+    newStatus = 'pending';
+  }
+
+  // Update KV if status changed
+  if (newStatus !== jobState.status) {
+    jobState.status = newStatus;
+    jobState.updatedAt = new Date().toISOString();
+    if (error) jobState.error = error;
+
+    await c.env.SMOKESCAN_SESSIONS.put(
+      `job:${jobId}`,
+      JSON.stringify(jobState),
+      { expirationTtl: JOB_TTL }
+    );
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      jobId,
+      status: newStatus,
+      error,
+    },
+  });
+}
+
+/**
+ * GET /api/assess/result/:jobId
+ * Get results for a completed job.
+ */
+export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
+  const jobId = c.req.param('jobId');
+  if (!jobId) {
+    return c.json(
+      { success: false, error: { code: 400, message: 'Missing jobId parameter' } },
+      400
+    );
+  }
+
+  // Load job state from KV
+  const jobData = await c.env.SMOKESCAN_SESSIONS.get(`job:${jobId}`);
+  if (!jobData) {
+    return c.json(
+      { success: false, error: { code: 404, message: 'Job not found' } },
+      404
+    );
+  }
+
+  const jobState: JobState = JSON.parse(jobData);
+
+  // Check if job is completed
+  if (jobState.status !== 'completed') {
+    return c.json(
+      { success: false, error: { code: 400, message: `Job not completed. Status: ${jobState.status}` } },
+      400
+    );
+  }
+
+  // Get result from RunPod
+  const runpod = new RunPodService({
+    apiKey: c.env.RUNPOD_API_KEY,
+    analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
+  });
+
+  const resultResponse = await runpod.getJobResult(jobState.runpodJobId);
+  if (!resultResponse.success) {
+    return c.json(
+      { success: false, error: resultResponse.error },
+      resultResponse.error.code as 400 | 500
+    );
+  }
+
+  // Parse report
+  const report = parseReport(resultResponse.data);
+  const visionAnalysis = extractVisionSummary(resultResponse.data);
+
+  // Save session for chat functionality
+  const sessionService = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
+  const sessionState: SessionState = {
+    sessionId: jobState.sessionId,
+    createdAt: jobState.createdAt,
+    updatedAt: new Date().toISOString(),
+    metadata: jobState.metadata,
+    imageR2Keys: jobState.imageR2Keys,
+    visionAnalysis,
+    ragChunks: [],
+    report,
+    conversationHistory: [],
+  };
+
+  await sessionService.save(sessionState);
+
+  // Clean up job state (optional - keep for debugging)
+  // await c.env.SMOKESCAN_SESSIONS.delete(`job:${jobId}`);
+
+  return c.json({
+    success: true,
+    data: {
+      sessionId: jobState.sessionId,
+      report,
     },
   });
 }

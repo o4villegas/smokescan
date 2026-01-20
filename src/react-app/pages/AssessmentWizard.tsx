@@ -3,10 +3,10 @@
  * Multi-step assessment with image upload and AI analysis
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ImageUpload, MetadataForm, ProcessingView, AssessmentReport, ChatInterface } from '../components';
-import { submitAssessment, sendChatMessage } from '../lib/api';
+import { submitAssessmentJob, getJobStatus, getJobResult, sendChatMessage } from '../lib/api';
 import type { AssessmentMetadata, AssessmentReport as ReportType, ChatMessage, RoomType } from '../types';
 
 type WizardStep = 'upload' | 'metadata' | 'processing' | 'complete' | 'chat';
@@ -43,6 +43,18 @@ export function AssessmentWizard() {
   // Pre-populated room_type from existing assessment (project flow)
   const [existingRoomType, setExistingRoomType] = useState<RoomType | undefined>(undefined);
 
+  // Polling interval ref for cleanup
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
   // Fetch existing assessment to pre-populate roomType when coming from project flow
   useEffect(() => {
     if (assessmentId) {
@@ -72,53 +84,107 @@ export function AssessmentWizard() {
     async (metadata: AssessmentMetadata) => {
       updateState({ metadata, step: 'processing', isLoading: true, error: null });
 
+      const startTime = Date.now();
+
       try {
-        // Use api.ts client - it handles base64 conversion with proper data URI format
-        // Backend handles R2 upload using sessionId as prefix
-        const startTime = Date.now();
-        const result = await submitAssessment(state.images, metadata);
-        const processingTime = Date.now() - startTime;
+        // Submit job (returns immediately with jobId)
+        const submitResult = await submitAssessmentJob(state.images, metadata);
 
-        if (result.success) {
-          // Update the assessment in database with results and session_id
-          if (assessmentId) {
-            try {
-              const patchResponse = await fetch(`/api/assessments/${assessmentId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  status: 'completed',
-                  executive_summary: result.data.report.executiveSummary,
-                  session_id: result.data.sessionId,
-                }),
-              });
-              if (!patchResponse.ok) {
-                console.error('Failed to update assessment status:', patchResponse.status);
-              }
-            } catch (patchError) {
-              console.error('Failed to update assessment:', patchError);
-            }
-          }
-
-          updateState({
-            step: 'complete',
-            report: result.data.report,
-            sessionId: result.data.sessionId,
-            isLoading: false,
-            processingTime,
-          });
-        } else {
+        if (!submitResult.success) {
           updateState({
             step: 'metadata',
             isLoading: false,
-            error: result.error.message,
+            error: submitResult.error.message,
           });
+          return;
         }
+
+        const { jobId } = submitResult.data;
+        console.log(`[Wizard] Job submitted: ${jobId}`);
+
+        // Poll for completion every 5 seconds
+        pollIntervalRef.current = setInterval(async () => {
+          try {
+            const statusResult = await getJobStatus(jobId);
+
+            if (!statusResult.success) {
+              console.warn('[Wizard] Status check failed, will retry');
+              return; // Keep polling on transient errors
+            }
+
+            const { status, error } = statusResult.data;
+            console.log(`[Wizard] Job ${jobId} status: ${status}`);
+
+            if (status === 'completed') {
+              // Stop polling
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+
+              // Fetch result
+              const resultResponse = await getJobResult(jobId);
+              const processingTime = Date.now() - startTime;
+
+              if (resultResponse.success) {
+                // Update the assessment in database with results and session_id
+                if (assessmentId) {
+                  try {
+                    const patchResponse = await fetch(`/api/assessments/${assessmentId}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        status: 'completed',
+                        executive_summary: resultResponse.data.report.executiveSummary,
+                        session_id: resultResponse.data.sessionId,
+                      }),
+                    });
+                    if (!patchResponse.ok) {
+                      console.error('Failed to update assessment status:', patchResponse.status);
+                    }
+                  } catch (patchError) {
+                    console.error('Failed to update assessment:', patchError);
+                  }
+                }
+
+                updateState({
+                  step: 'complete',
+                  report: resultResponse.data.report,
+                  sessionId: resultResponse.data.sessionId,
+                  isLoading: false,
+                  processingTime,
+                });
+              } else {
+                updateState({
+                  step: 'metadata',
+                  isLoading: false,
+                  error: resultResponse.error.message,
+                });
+              }
+            } else if (status === 'failed') {
+              // Stop polling
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+
+              updateState({
+                step: 'metadata',
+                isLoading: false,
+                error: error || 'Assessment processing failed',
+              });
+            }
+            // For 'pending' or 'in_progress', keep polling
+          } catch (pollError) {
+            console.error('[Wizard] Polling error:', pollError);
+            // Keep polling on errors
+          }
+        }, 5000); // Poll every 5 seconds
       } catch {
         updateState({
           step: 'metadata',
           isLoading: false,
-          error: 'Failed to process assessment',
+          error: 'Failed to submit assessment',
         });
       }
     },

@@ -190,6 +190,23 @@ export type ConversationMessage = {
   timestamp: string;
 };
 
+// Job status for async assessment processing
+export type JobStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+// Job state stored in KV for polling
+export type JobState = {
+  jobId: string;
+  runpodJobId: string;
+  status: JobStatus;
+  sessionId: string;
+  metadata: AssessmentMetadata;
+  imageR2Keys: string[];
+  images: string[]; // base64 images for RunPod
+  createdAt: string;
+  updatedAt: string;
+  error?: string;
+};
+
 // API Request/Response types
 export type AssessmentRequest = {
   images: string[]; // base64 encoded images

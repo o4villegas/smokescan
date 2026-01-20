@@ -8,6 +8,7 @@ import type {
   AssessmentResponse,
   ChatResponse,
   ApiResponse,
+  JobStatus,
 } from '../types';
 
 const API_BASE = '/api';
@@ -105,6 +106,130 @@ export async function sendChatMessage(
 
     const data = await response.json();
     return data as ApiResponse<ChatResponse>;
+  } catch (error) {
+    return {
+      success: false,
+      error: {
+        code: 500,
+        message: 'Network error',
+        details: String(error),
+      },
+    };
+  }
+}
+
+// ============ Polling-based Assessment API ============
+
+type JobSubmitResponse = {
+  jobId: string;
+};
+
+type JobStatusResponse = {
+  jobId: string;
+  status: JobStatus;
+  error?: string;
+};
+
+/**
+ * Submit assessment job (returns immediately with jobId)
+ */
+export async function submitAssessmentJob(
+  images: File[],
+  metadata: AssessmentMetadata
+): Promise<ApiResponse<JobSubmitResponse>> {
+  try {
+    // Convert images to base64
+    const imageBase64Array = await Promise.all(images.map(fileToBase64));
+
+    const response = await fetch(`${API_BASE}/assess/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        images: imageBase64Array,
+        metadata,
+      }),
+    });
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          code: response.status,
+          message: `HTTP error: ${response.status} ${response.statusText}`,
+        },
+      };
+    }
+
+    const data = await response.json();
+    return data as ApiResponse<JobSubmitResponse>;
+  } catch (error) {
+    return {
+      success: false,
+      error: {
+        code: 500,
+        message: 'Network error',
+        details: String(error),
+      },
+    };
+  }
+}
+
+/**
+ * Check job status (for polling)
+ */
+export async function getJobStatus(
+  jobId: string
+): Promise<ApiResponse<JobStatusResponse>> {
+  try {
+    const response = await fetch(`${API_BASE}/assess/status/${jobId}`);
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          code: response.status,
+          message: `HTTP error: ${response.status} ${response.statusText}`,
+        },
+      };
+    }
+
+    const data = await response.json();
+    return data as ApiResponse<JobStatusResponse>;
+  } catch (error) {
+    return {
+      success: false,
+      error: {
+        code: 500,
+        message: 'Network error',
+        details: String(error),
+      },
+    };
+  }
+}
+
+/**
+ * Get job result (when status is 'completed')
+ */
+export async function getJobResult(
+  jobId: string
+): Promise<ApiResponse<AssessmentResponse>> {
+  try {
+    const response = await fetch(`${API_BASE}/assess/result/${jobId}`);
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          code: response.status,
+          message: `HTTP error: ${response.status} ${response.statusText}`,
+        },
+      };
+    }
+
+    const data = await response.json();
+    return data as ApiResponse<AssessmentResponse>;
   } catch (error) {
     return {
       success: false,
