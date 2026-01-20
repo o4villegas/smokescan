@@ -66,6 +66,7 @@ const UpdateAssessmentSchema = z.object({
   overall_severity: SeveritySchema.optional(),
   confidence_score: z.number().min(0).max(1).optional(),
   executive_summary: z.string().max(5000).optional(),
+  session_id: z.string().uuid().optional(), // For chat functionality
   // FDAM fields (human inputs that cannot be determined by photo analysis)
   floor_level: FloorLevelSchema.optional(),
   dimensions: RoomDimensionsSchema.optional(),

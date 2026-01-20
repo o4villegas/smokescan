@@ -175,6 +175,7 @@ export type ChatResponse = {
   sessionId: string;
   response: string;
   timestamp: string;
+  newImageKeys?: string[]; // R2 keys for newly uploaded images
 };
 
 export type ApiResponse<T> = {

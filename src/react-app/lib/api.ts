@@ -50,6 +50,16 @@ export async function submitAssessment(
       }),
     });
 
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          code: response.status,
+          message: `HTTP error: ${response.status} ${response.statusText}`,
+        },
+      };
+    }
+
     const data = await response.json();
     return data as ApiResponse<AssessmentResponse>;
   } catch (error) {
@@ -83,6 +93,16 @@ export async function sendChatMessage(
       }),
     });
 
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          code: response.status,
+          message: `HTTP error: ${response.status} ${response.statusText}`,
+        },
+      };
+    }
+
     const data = await response.json();
     return data as ApiResponse<ChatResponse>;
   } catch (error) {
@@ -97,20 +117,3 @@ export async function sendChatMessage(
   }
 }
 
-/**
- * Check API health status
- */
-export async function checkHealth(): Promise<{
-  status: 'healthy' | 'degraded' | 'unhealthy';
-  services: Record<string, boolean>;
-}> {
-  try {
-    const response = await fetch(`${API_BASE}/health`);
-    return await response.json();
-  } catch {
-    return {
-      status: 'unhealthy',
-      services: {},
-    };
-  }
-}

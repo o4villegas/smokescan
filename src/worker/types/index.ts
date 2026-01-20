@@ -246,6 +246,7 @@ export type Assessment = {
   overall_severity?: Severity;
   confidence_score?: number;
   executive_summary?: string;
+  session_id?: string; // For chat functionality on existing assessments
   // FDAM fields (human inputs that cannot be determined by photo analysis)
   floor_level?: FloorLevel;
   dimensions?: RoomDimensions;
@@ -341,6 +342,7 @@ export type UpdateAssessmentInput = {
   overall_severity?: Severity;
   confidence_score?: number;
   executive_summary?: string;
+  session_id?: string; // For chat functionality
   // FDAM fields (human inputs)
   floor_level?: FloorLevel;
   dimensions?: RoomDimensions;

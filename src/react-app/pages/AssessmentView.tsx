@@ -56,7 +56,12 @@ export function AssessmentView() {
       const result = await response.json();
 
       if (result.success) {
-        setState((prev) => ({ ...prev, assessment: result.data, isLoading: false }));
+        setState((prev) => ({
+          ...prev,
+          assessment: result.data,
+          sessionId: result.data.session_id || null,
+          isLoading: false,
+        }));
       } else {
         setState((prev) => ({ ...prev, error: result.error.message, isLoading: false }));
       }
@@ -76,10 +81,13 @@ export function AssessmentView() {
       return;
     }
 
+    const userMessage = { role: 'user' as const, content: message };
+
     setState((prev) => ({
       ...prev,
-      chatHistory: [...prev.chatHistory, { role: 'user', content: message }],
+      chatHistory: [...prev.chatHistory, userMessage],
       isLoading: true,
+      error: null, // Clear previous error
     }));
 
     try {
@@ -88,6 +96,17 @@ export function AssessmentView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: state.sessionId, message }),
       });
+
+      if (!response.ok) {
+        // Remove user message on HTTP error, show error banner
+        setState((prev) => ({
+          ...prev,
+          chatHistory: prev.chatHistory.filter((m) => m !== userMessage),
+          error: `HTTP error: ${response.status}`,
+          isLoading: false,
+        }));
+        return;
+      }
 
       const result = await response.json();
 
@@ -101,22 +120,20 @@ export function AssessmentView() {
           isLoading: false,
         }));
       } else {
+        // Remove user message on API error, show error banner
         setState((prev) => ({
           ...prev,
-          chatHistory: [
-            ...prev.chatHistory,
-            { role: 'assistant', content: `Error: ${result.error.message}` },
-          ],
+          chatHistory: prev.chatHistory.filter((m) => m !== userMessage),
+          error: result.error.message,
           isLoading: false,
         }));
       }
     } catch {
+      // Remove user message on network error, show error banner
       setState((prev) => ({
         ...prev,
-        chatHistory: [
-          ...prev.chatHistory,
-          { role: 'assistant', content: 'Failed to send message' },
-        ],
+        chatHistory: prev.chatHistory.filter((m) => m !== userMessage),
+        error: 'Failed to send message',
         isLoading: false,
       }));
     }

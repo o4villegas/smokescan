@@ -63,16 +63,24 @@ export function AssessmentWizard() {
         const processingTime = Date.now() - startTime;
 
         if (result.success) {
-          // Update the assessment in database with results
+          // Update the assessment in database with results and session_id
           if (assessmentId) {
-            await fetch(`/api/assessments/${assessmentId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                status: 'completed',
-                executive_summary: result.data.report.executiveSummary,
-              }),
-            });
+            try {
+              const patchResponse = await fetch(`/api/assessments/${assessmentId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  status: 'completed',
+                  executive_summary: result.data.report.executiveSummary,
+                  session_id: result.data.sessionId,
+                }),
+              });
+              if (!patchResponse.ok) {
+                console.error('Failed to update assessment status:', patchResponse.status);
+              }
+            } catch (patchError) {
+              console.error('Failed to update assessment:', patchError);
+            }
           }
 
           updateState({
@@ -125,15 +133,20 @@ export function AssessmentWizard() {
           updateState({
             chatHistory: [...state.chatHistory, userMessage, assistantMessage],
             isLoading: false,
+            error: null, // Clear any previous error
           });
         } else {
+          // Remove user message on failure, show error banner
           updateState({
+            chatHistory: state.chatHistory.filter((m) => m !== userMessage),
             error: result.error.message,
             isLoading: false,
           });
         }
       } catch {
+        // Remove user message on failure, show error banner
         updateState({
+          chatHistory: state.chatHistory.filter((m) => m !== userMessage),
           error: 'Failed to send message',
           isLoading: false,
         });
@@ -189,14 +202,14 @@ export function AssessmentWizard() {
           images={state.images}
           previewUrls={state.imagePreviewUrls}
           onImagesChange={handleImagesChange}
-          onNext={() => updateState({ step: 'metadata' })}
+          onNext={() => updateState({ step: 'metadata', error: null })}
         />
       )}
 
       {state.step === 'metadata' && (
         <MetadataForm
           onSubmit={handleMetadataSubmit}
-          onBack={() => updateState({ step: 'upload' })}
+          onBack={() => updateState({ step: 'upload', error: null })}
           isLoading={state.isLoading}
         />
       )}

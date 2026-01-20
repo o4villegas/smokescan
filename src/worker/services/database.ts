@@ -43,6 +43,7 @@ function parseAssessmentRow(row: AssessmentRow): Assessment {
     overall_severity: row.overall_severity,
     confidence_score: row.confidence_score,
     executive_summary: row.executive_summary,
+    session_id: row.session_id,
     floor_level: row.floor_level,
     dimensions: row.dimensions_json ? JSON.parse(row.dimensions_json) : undefined,
     sensory_observations: row.sensory_observations_json ? JSON.parse(row.sensory_observations_json) : undefined,
@@ -309,6 +310,10 @@ export class DatabaseService {
       if (input.executive_summary !== undefined) {
         updates.push('executive_summary = ?');
         values.push(input.executive_summary);
+      }
+      if (input.session_id !== undefined) {
+        updates.push('session_id = ?');
+        values.push(input.session_id);
       }
       // FDAM fields
       if (input.floor_level !== undefined) {

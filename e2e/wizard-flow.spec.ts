@@ -1,5 +1,4 @@
 import { test, expect, type Page } from '@playwright/test';
-import path from 'path';
 
 /**
  * Mock API response for /api/assess
@@ -101,14 +100,6 @@ async function setupMocks(page: Page) {
       await route.continue();
     }
   });
-}
-
-/**
- * Create a test image file for upload
- */
-function getTestImagePath(): string {
-  // Use a simple 1x1 pixel PNG for testing
-  return path.join(__dirname, 'fixtures', 'test-image.png');
 }
 
 test.describe('Assessment Wizard Flow', () => {

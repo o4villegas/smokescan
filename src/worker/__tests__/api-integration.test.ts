@@ -9,7 +9,7 @@
  * 4. parseReport() correctly parses realistic model output
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 // Import the parseReport function by reading the module
 // We'll test it directly since it's a critical function
