@@ -17,17 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { DimensionsInput } from './DimensionsInput';
-import { SensoryObservationsInput } from './SensoryObservations';
-import type { RoomType, FloorLevel, RoomDimensions, SensoryObservations } from '@/types';
-import { ROOM_TYPE_OPTIONS, FLOOR_LEVEL_OPTIONS } from '@/types';
+import type { RoomType } from '@/types';
+import { ROOM_TYPE_OPTIONS } from '@/types';
 
 export interface RoomFormData {
   room_name?: string;
   room_type: RoomType;
-  floor_level?: FloorLevel;
-  dimensions?: RoomDimensions;
-  sensory_observations?: SensoryObservations;
 }
 
 interface RoomFormProps {
@@ -49,11 +44,6 @@ export function RoomForm({
 }: RoomFormProps) {
   const [roomName, setRoomName] = useState(initialData?.room_name ?? '');
   const [roomType, setRoomType] = useState<RoomType | ''>(initialData?.room_type ?? '');
-  const [floorLevel, setFloorLevel] = useState<FloorLevel | ''>(initialData?.floor_level ?? '');
-  const [dimensions, setDimensions] = useState<Partial<RoomDimensions>>(initialData?.dimensions ?? {});
-  const [sensoryObs, setSensoryObs] = useState<Partial<SensoryObservations>>(
-    initialData?.sensory_observations ?? {}
-  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,11 +53,6 @@ export function RoomForm({
     const data: RoomFormData = {
       room_name: roomName || undefined,
       room_type: roomType,
-      floor_level: floorLevel || undefined,
-      dimensions: dimensions.area_sf ? (dimensions as RoomDimensions) : undefined,
-      sensory_observations: sensoryObs.smoke_odor_present !== undefined
-        ? (sensoryObs as SensoryObservations)
-        : undefined,
     };
 
     onSubmit(data);
@@ -84,8 +69,8 @@ export function RoomForm({
               {mode === 'create' ? 'Add New Room' : 'Edit Room'}
             </DialogTitle>
             <DialogDescription>
-              Enter room information. Visual observations (soot, char, zone) will be
-              determined by AI analysis of photos.
+              Enter basic room information. Detailed FDAM metadata (dimensions, sensory
+              observations) will be collected in the assessment wizard after uploading photos.
             </DialogDescription>
           </DialogHeader>
 
@@ -117,34 +102,6 @@ export function RoomForm({
                   </SelectContent>
                 </Select>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="floor-level">Floor Level</Label>
-                <Select value={floorLevel} onValueChange={(val) => setFloorLevel(val as FloorLevel)}>
-                  <SelectTrigger id="floor-level">
-                    <SelectValue placeholder="Select floor level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FLOOR_LEVEL_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Dimensions */}
-            <div className="space-y-2">
-              <Label className="text-base font-semibold">Room Dimensions</Label>
-              <DimensionsInput value={dimensions} onChange={setDimensions} />
-            </div>
-
-            {/* Sensory Observations */}
-            <div className="space-y-2">
-              <Label className="text-base font-semibold">Sensory Observations</Label>
-              <SensoryObservationsInput value={sensoryObs} onChange={setSensoryObs} />
             </div>
           </div>
 

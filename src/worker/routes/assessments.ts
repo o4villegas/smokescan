@@ -56,10 +56,7 @@ const CreateAssessmentSchema = z.object({
   project_id: z.string().uuid(),
   room_type: RoomTypeSchema,
   room_name: z.string().max(200).optional(),
-  // FDAM fields (human inputs that cannot be determined by photo analysis)
-  floor_level: FloorLevelSchema.optional(),
-  dimensions: RoomDimensionsSchema.optional(),
-  sensory_observations: SensoryObservationsSchema.optional(),
+  // FDAM fields removed - all detailed metadata collected in MetadataForm after image upload
 });
 
 const UpdateAssessmentSchema = z.object({

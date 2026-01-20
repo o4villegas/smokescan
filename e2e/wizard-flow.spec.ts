@@ -1,6 +1,23 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
+ * Mock API response for GET /api/assessments/:id (fetch existing assessment)
+ */
+const mockExistingAssessment = {
+  success: true,
+  data: {
+    id: 'test-assess',
+    project_id: 'test-proj',
+    room_type: 'commercial-office',
+    room_name: 'Test Office',
+    phase: 'PRE',
+    status: 'draft',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+};
+
+/**
  * Mock API response for /api/assess
  */
 const mockAssessmentResponse = {
@@ -88,13 +105,20 @@ async function setupMocks(page: Page) {
     });
   });
 
-  // Mock /api/assessments/:id PATCH (optional update)
+  // Mock /api/assessments/:id GET and PATCH
   await page.route('**/api/assessments/*', async (route) => {
     if (route.request().method() === 'PATCH') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ success: true }),
+      });
+    } else if (route.request().method() === 'GET') {
+      // Return mock existing assessment (for pre-populating roomType)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockExistingAssessment),
       });
     } else {
       await route.continue();
@@ -180,6 +204,35 @@ test.describe('Assessment Wizard Flow', () => {
     await expect(page.locator('#structure-type')).toBeVisible();
   });
 
+  test('should pre-populate room type from existing assessment (project flow)', async ({ page }) => {
+    await page.goto('/projects/test-proj/assess/test-assess');
+
+    // Upload image
+    const fileInput = page.locator('#file-input');
+    const pngBuffer = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    await fileInput.setInputFiles({
+      name: 'test-image.png',
+      mimeType: 'image/png',
+      buffer: pngBuffer,
+    });
+
+    // Navigate to metadata form
+    await page.getByRole('button', { name: 'Continue to Details' }).click();
+    await expect(page.getByText('Property Details')).toBeVisible();
+
+    // Verify room type is pre-populated with 'commercial-office' from mock
+    // The select trigger should show "Commercial - Office" text
+    const roomTypeSelect = page.locator('#room-type');
+    await expect(roomTypeSelect).toContainText('Commercial - Office');
+  });
+
   test('should fill metadata form and submit assessment', async ({ page }) => {
     await page.goto('/projects/test-proj/assess/test-assess');
 
@@ -210,6 +263,11 @@ test.describe('Assessment Wizard Flow', () => {
     // Structure type select (Radix portal)
     await page.locator('#structure-type').click();
     await page.getByRole('option', { name: 'Commercial Building' }).click();
+
+    // Fill mandatory dimensions
+    await page.locator('#length-ft').fill('20');
+    await page.locator('#width-ft').fill('15');
+    await page.locator('#height-ft').fill('10');
 
     // Fill optional fields
     await page.locator('#fire-origin').fill('Electrical panel');
@@ -242,6 +300,12 @@ test.describe('Assessment Wizard Flow', () => {
       buffer: pngBuffer,
     });
     await page.getByRole('button', { name: 'Continue to Details' }).click();
+
+    // Fill mandatory dimensions
+    await page.locator('#length-ft').fill('20');
+    await page.locator('#width-ft').fill('15');
+    await page.locator('#height-ft').fill('10');
+
     await page.getByRole('button', { name: 'Start Assessment' }).click();
 
     // Wait for report
@@ -280,6 +344,12 @@ test.describe('Assessment Wizard Flow', () => {
       buffer: pngBuffer,
     });
     await page.getByRole('button', { name: 'Continue to Details' }).click();
+
+    // Fill mandatory dimensions
+    await page.locator('#length-ft').fill('20');
+    await page.locator('#width-ft').fill('15');
+    await page.locator('#height-ft').fill('10');
+
     await page.getByRole('button', { name: 'Start Assessment' }).click();
     await expect(page.getByText('FDAM Assessment Report')).toBeVisible({ timeout: 10000 });
 
@@ -311,6 +381,12 @@ test.describe('Assessment Wizard Flow', () => {
       buffer: pngBuffer,
     });
     await page.getByRole('button', { name: 'Continue to Details' }).click();
+
+    // Fill mandatory dimensions
+    await page.locator('#length-ft').fill('20');
+    await page.locator('#width-ft').fill('15');
+    await page.locator('#height-ft').fill('10');
+
     await page.getByRole('button', { name: 'Start Assessment' }).click();
     await expect(page.getByText('FDAM Assessment Report')).toBeVisible({ timeout: 10000 });
 
@@ -348,6 +424,12 @@ test.describe('Assessment Wizard Flow', () => {
       buffer: pngBuffer,
     });
     await page.getByRole('button', { name: 'Continue to Details' }).click();
+
+    // Fill mandatory dimensions
+    await page.locator('#length-ft').fill('20');
+    await page.locator('#width-ft').fill('15');
+    await page.locator('#height-ft').fill('10');
+
     await page.getByRole('button', { name: 'Start Assessment' }).click();
     await expect(page.getByText('FDAM Assessment Report')).toBeVisible({ timeout: 10000 });
 

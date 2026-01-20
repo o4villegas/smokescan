@@ -47,11 +47,12 @@ type MetadataFormProps = {
   onSubmit: (metadata: AssessmentMetadata) => void;
   onBack: () => void;
   isLoading: boolean;
+  initialRoomType?: RoomType;
 };
 
-export function MetadataForm({ onSubmit, onBack, isLoading }: MetadataFormProps) {
+export function MetadataForm({ onSubmit, onBack, isLoading, initialRoomType }: MetadataFormProps) {
   // Basic metadata
-  const [roomType, setRoomType] = useState<RoomType>('residential-living');
+  const [roomType, setRoomType] = useState<RoomType>(initialRoomType ?? 'residential-living');
   const [structureType, setStructureType] = useState<StructureType>('single-family');
 
   // Floor level (optional)

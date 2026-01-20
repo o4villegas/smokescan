@@ -3,11 +3,11 @@
  * Multi-step assessment with image upload and AI analysis
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ImageUpload, MetadataForm, ProcessingView, AssessmentReport, ChatInterface } from '../components';
 import { submitAssessment, sendChatMessage } from '../lib/api';
-import type { AssessmentMetadata, AssessmentReport as ReportType, ChatMessage } from '../types';
+import type { AssessmentMetadata, AssessmentReport as ReportType, ChatMessage, RoomType } from '../types';
 
 type WizardStep = 'upload' | 'metadata' | 'processing' | 'complete' | 'chat';
 
@@ -39,6 +39,23 @@ export function AssessmentWizard() {
     isLoading: false,
     error: null,
   });
+
+  // Pre-populated room_type from existing assessment (project flow)
+  const [existingRoomType, setExistingRoomType] = useState<RoomType | undefined>(undefined);
+
+  // Fetch existing assessment to pre-populate roomType when coming from project flow
+  useEffect(() => {
+    if (assessmentId) {
+      fetch(`/api/assessments/${assessmentId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.data?.room_type) {
+            setExistingRoomType(data.data.room_type);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [assessmentId]);
 
   const updateState = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }));
@@ -211,6 +228,7 @@ export function AssessmentWizard() {
           onSubmit={handleMetadataSubmit}
           onBack={() => updateState({ step: 'upload', error: null })}
           isLoading={state.isLoading}
+          initialRoomType={existingRoomType}
         />
       )}
 
