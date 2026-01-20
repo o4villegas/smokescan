@@ -26,10 +26,47 @@ export const StructureTypeSchema = z.enum([
   'mixed-use',
 ]);
 
+// Floor level enum (FDAM field data)
+export const FloorLevelSchema = z.enum([
+  'basement',
+  'ground',
+  '1st',
+  '2nd',
+  '3rd',
+  '4th+',
+  'attic',
+]);
+
+// Smoke odor intensity enum
+export const SmokeOdorIntensitySchema = z.enum(['none', 'faint', 'moderate', 'strong']);
+
+// White wipe result - dropdown options OR free text
+export const WhiteWipeResultSchema = z.union([
+  z.enum(['clean', 'light-deposits', 'moderate-deposits', 'heavy-deposits']),
+  z.string().max(100),
+]);
+
+// Room dimensions schema (all 3 required if any provided)
+export const RoomDimensionsSchema = z.object({
+  length_ft: z.number().positive(),
+  width_ft: z.number().positive(),
+  height_ft: z.number().positive(),
+});
+
+// Sensory observations schema (FDAM field data)
+export const SensoryObservationsSchema = z.object({
+  smoke_odor_present: z.boolean().optional(),
+  smoke_odor_intensity: SmokeOdorIntensitySchema.optional(),
+  white_wipe_result: WhiteWipeResultSchema.optional(),
+});
+
 // Assessment metadata schema
 export const AssessmentMetadataSchema = z.object({
   roomType: RoomTypeSchema,
   structureType: StructureTypeSchema,
+  floor_level: FloorLevelSchema.optional(),
+  dimensions: RoomDimensionsSchema, // MANDATORY per FDAM methodology
+  sensory_observations: SensoryObservationsSchema.optional(),
   fireOrigin: z.string().optional(),
   notes: z.string().max(2000).optional(),
 });

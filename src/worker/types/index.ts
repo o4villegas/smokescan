@@ -63,12 +63,22 @@ export type RoomDimensions = {
   volume_cf: number;    // area × height (auto-calculated)
 };
 
+// Smoke odor intensity (matches FDAM condition scale)
+export type SmokeOdorIntensity = 'none' | 'faint' | 'moderate' | 'strong';
+
 // Sensory observations - inputs that CANNOT be determined by photo analysis
 // Visual observations (soot/char/ash) are handled by VisionAnalysisOutput
 export type SensoryObservations = {
-  smoke_odor_present: boolean;
-  smoke_odor_intensity?: 'faint' | 'noticeable' | 'strong';
-  white_wipe_result?: 'not-performed' | 'clean' | 'light-deposits' | 'heavy-deposits';
+  smoke_odor_present?: boolean;
+  smoke_odor_intensity?: SmokeOdorIntensity;
+  white_wipe_result?: string; // dropdown options or free text
+};
+
+// Room dimensions input (mandatory for FDAM assessment)
+export type RoomDimensionsInput = {
+  length_ft: number;
+  width_ft: number;
+  height_ft: number;
 };
 
 export type StructureType =
@@ -167,6 +177,9 @@ export type SessionState = {
 export type AssessmentMetadata = {
   roomType: RoomType;
   structureType: StructureType;
+  floor_level?: FloorLevel;
+  dimensions: RoomDimensionsInput; // MANDATORY per FDAM methodology
+  sensory_observations?: SensoryObservations;
   fireOrigin?: string;
   notes?: string;
 };

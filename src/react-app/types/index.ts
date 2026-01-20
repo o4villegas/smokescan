@@ -41,11 +41,17 @@ export type RoomDimensions = {
   volume_cf: number;    // area × height (auto-calculated)
 };
 
+// Smoke odor intensity (matches FDAM condition scale)
+export type SmokeOdorIntensity = 'none' | 'faint' | 'moderate' | 'strong';
+
+// White wipe result (dropdown options + free text)
+export type WhiteWipeResult = 'clean' | 'light-deposits' | 'moderate-deposits' | 'heavy-deposits' | string;
+
 // Sensory observations - inputs that CANNOT be determined by photo analysis
 export type SensoryObservations = {
-  smoke_odor_present: boolean;
-  smoke_odor_intensity?: 'faint' | 'noticeable' | 'strong';
-  white_wipe_result?: 'not-performed' | 'clean' | 'light-deposits' | 'heavy-deposits';
+  smoke_odor_present?: boolean;
+  smoke_odor_intensity?: SmokeOdorIntensity;
+  white_wipe_result?: WhiteWipeResult;
 };
 export type DamageType =
   | 'char_damage'
@@ -137,10 +143,20 @@ export type ChatMessage = {
   content: string;
 };
 
-// Assessment metadata
+// Room dimensions input (without auto-calculated fields)
+export type RoomDimensionsInput = {
+  length_ft: number;
+  width_ft: number;
+  height_ft: number;
+};
+
+// Assessment metadata (matches backend schema)
 export type AssessmentMetadata = {
   roomType: RoomType;
   structureType: StructureType;
+  floor_level?: FloorLevel;
+  dimensions: RoomDimensionsInput; // MANDATORY per FDAM methodology
+  sensory_observations?: SensoryObservations;
   fireOrigin?: string;
   notes?: string;
 };
@@ -237,15 +253,16 @@ export const FLOOR_LEVEL_OPTIONS: { value: FloorLevel; label: string }[] = [
   { value: 'attic', label: 'Attic' },
 ];
 
-export const SMOKE_ODOR_INTENSITY_OPTIONS: { value: SensoryObservations['smoke_odor_intensity']; label: string }[] = [
+export const SMOKE_ODOR_INTENSITY_OPTIONS: { value: SmokeOdorIntensity; label: string }[] = [
+  { value: 'none', label: 'None' },
   { value: 'faint', label: 'Faint' },
-  { value: 'noticeable', label: 'Noticeable' },
+  { value: 'moderate', label: 'Moderate' },
   { value: 'strong', label: 'Strong' },
 ];
 
-export const WHITE_WIPE_RESULT_OPTIONS: { value: SensoryObservations['white_wipe_result']; label: string }[] = [
-  { value: 'not-performed', label: 'Not Performed' },
+export const WHITE_WIPE_RESULT_OPTIONS: { value: string; label: string }[] = [
   { value: 'clean', label: 'Clean' },
   { value: 'light-deposits', label: 'Light Deposits' },
+  { value: 'moderate-deposits', label: 'Moderate Deposits' },
   { value: 'heavy-deposits', label: 'Heavy Deposits' },
 ];

@@ -82,11 +82,26 @@ export class RunPodService {
   ): Promise<Result<string, ApiError>> {
     const endpointUrl = `https://api.runpod.ai/v2/${this.config.analysisEndpointId}`;
 
-    const userPrompt = `Analyze these ${images.length} images of a ${metadata.roomType} in a ${metadata.structureType} structure.
-${metadata.fireOrigin ? `Fire origin information: ${metadata.fireOrigin}` : ''}
-${metadata.notes ? `Additional notes: ${metadata.notes}` : ''}
+    // Build metadata sections
+    const area = metadata.dimensions.length_ft * metadata.dimensions.width_ft;
+    const volume = area * metadata.dimensions.height_ft;
 
-Generate a comprehensive FDAM assessment report. Use the fdam_rag tool to retrieve relevant FDAM methodology based on what you observe in the images.`;
+    const userPrompt = `Analyze these ${images.length} images of a ${metadata.roomType} in a ${metadata.structureType} structure.
+
+## Room Metadata
+- Floor level: ${metadata.floor_level || 'not specified'}
+- Dimensions: ${metadata.dimensions.length_ft}ft L × ${metadata.dimensions.width_ft}ft W × ${metadata.dimensions.height_ft}ft H
+- Area: ${area} SF
+- Volume: ${volume} CF
+${metadata.fireOrigin ? `- Fire origin: ${metadata.fireOrigin}` : ''}
+
+## Field Observations
+${metadata.sensory_observations?.smoke_odor_present ? `- Smoke odor detected: ${metadata.sensory_observations.smoke_odor_intensity || 'present'}` : '- Smoke odor: not reported'}
+${metadata.sensory_observations?.white_wipe_result ? `- White wipe test: ${metadata.sensory_observations.white_wipe_result}` : '- White wipe test: not performed'}
+
+${metadata.notes ? `## Additional Notes\n${metadata.notes}` : ''}
+
+Generate a comprehensive FDAM assessment report. Consider all metadata and field observations when determining zone classification and disposition recommendations. Use the fdam_rag tool to retrieve relevant FDAM methodology based on what you observe in the images.`;
 
     // Build message content with images
     const content: Array<{ type: string; text?: string; image?: string }> = [

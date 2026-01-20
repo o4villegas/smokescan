@@ -86,14 +86,17 @@ PASS2_SYSTEM_PROMPT_TEMPLATE = """You are a fire damage assessment consultant us
 ## Observations
 {observations}
 
+{metadata_section}
+
 Generate a PRE report with these sections:
 1. Executive Summary - severity, zone classification, urgent items
-2. Zone Classification - with FDAM methodology basis
+2. Zone Classification - with FDAM methodology basis (consider field observations)
 3. Surface Assessment - materials and conditions
 4. Disposition - Clean / Remove / No-action per methodology
-5. Sampling Recommendations - tape lifts, wipes, density
+5. Sampling Recommendations - tape lifts, wipes, density (use room dimensions for calculation)
 
 Use ONLY thresholds from the Reference Material. If a value isn't specified, say so.
+Consider all field observations (smoke odor, white wipe results) when determining zone classification.
 
 **Advisory**: Requires professional validation before remediation."""
 
@@ -186,6 +189,30 @@ def extract_analysis(text: str) -> str:
     """Extract analysis section from chat Pass 1 output"""
     match = re.search(r'## Analysis\s*([\s\S]*?)$', text)
     return match.group(1).strip() if match else text
+
+
+def extract_metadata_section(user_text: str) -> str:
+    """Extract room metadata and field observations from user prompt.
+
+    These sections are added by the frontend and contain:
+    - Room Metadata: floor level, dimensions, area, volume, fire origin
+    - Field Observations: smoke odor, white wipe test results
+
+    Returns formatted metadata section or empty string if not found.
+    """
+    sections = []
+
+    # Extract Room Metadata section
+    room_match = re.search(r'## Room Metadata\s*([\s\S]*?)(?=##|$)', user_text)
+    if room_match:
+        sections.append(f"## Room Metadata\n{room_match.group(1).strip()}")
+
+    # Extract Field Observations section
+    field_match = re.search(r'## Field Observations\s*([\s\S]*?)(?=##|$)', user_text)
+    if field_match:
+        sections.append(f"## Field Observations\n{field_match.group(1).strip()}")
+
+    return "\n\n".join(sections) if sections else ""
 
 
 def query_rag(queries: list) -> str:
@@ -363,11 +390,19 @@ def handle_analysis(images: list, user_text: str, max_tokens: int) -> dict:
 
     rag_context = query_rag(rag_queries)
 
+    # === EXTRACT METADATA (from frontend prompt) ===
+    metadata_section = extract_metadata_section(user_text)
+    if metadata_section:
+        print(f"[Handler] Extracted metadata: {metadata_section[:200]}...")
+    else:
+        print("[Handler] No metadata section found in user prompt")
+
     # === PASS 2: Select prompt based on image presence ===
     if images:
         pass2_prompt = PASS2_SYSTEM_PROMPT_TEMPLATE.format(
             rag_context=rag_context,
-            observations=observations
+            observations=observations,
+            metadata_section=metadata_section
         )
         view_word = "view" if len(images) == 1 else "views"
         pass2_user_text = f"Generate PRE report for this space ({len(images)} {view_word}). User request: {user_text}"
