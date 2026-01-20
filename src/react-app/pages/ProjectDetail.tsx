@@ -223,8 +223,13 @@ export function ProjectDetail() {
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {project.assessments.map((assessment) => (
-              <Link key={assessment.id} to={`/assessments/${assessment.id}`}>
+            {project.assessments.map((assessment) => {
+              // Route draft/in-progress to wizard, completed to view
+              const assessmentUrl = assessment.status === 'draft' || assessment.status === 'in-progress'
+                ? `/projects/${id}/assess/${assessment.id}`
+                : `/assessments/${assessment.id}`;
+              return (
+              <Link key={assessment.id} to={assessmentUrl}>
                 <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between">
@@ -262,7 +267,8 @@ export function ProjectDetail() {
                   </CardContent>
                 </Card>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
