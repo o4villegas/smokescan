@@ -85,7 +85,18 @@ app.post('/projects/:projectId/assessments', async (c) => {
   const { projectId } = c.req.param();
   const body = await c.req.json();
 
+  // DEBUG: Log incoming request body
+  console.log('[DEBUG] Request body:', JSON.stringify(body));
+  console.log('[DEBUG] Body keys:', Object.keys(body));
+
   const parsed = CreateAssessmentSchema.safeParse({ ...body, project_id: projectId });
+
+  // DEBUG: Log parsed result
+  console.log('[DEBUG] Parsed success:', parsed.success);
+  if (parsed.success) {
+    console.log('[DEBUG] Parsed data:', JSON.stringify(parsed.data));
+    console.log('[DEBUG] Parsed data keys:', Object.keys(parsed.data));
+  }
 
   if (!parsed.success) {
     return c.json(
