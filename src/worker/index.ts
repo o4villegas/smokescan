@@ -54,7 +54,7 @@ app.post('/api/projects/:projectId/assessments', async (c) => {
   const { projectId } = c.req.param();
   const body = await c.req.json();
 
-  // Create assessment with project_id
+  // Create assessment with project_id and all FDAM fields
   const { DatabaseService } = await import('./services/database');
   const db = new DatabaseService(c.env.SMOKESCAN_DB);
 
@@ -62,6 +62,11 @@ app.post('/api/projects/:projectId/assessments', async (c) => {
     project_id: projectId,
     room_type: body.room_type,
     room_name: body.room_name,
+    // FDAM fields (optional - pre-filled for seeded data)
+    structure_type: body.structure_type,
+    floor_level: body.floor_level,
+    dimensions: body.dimensions,
+    sensory_observations: body.sensory_observations,
   });
 
   if (!result.success) {
