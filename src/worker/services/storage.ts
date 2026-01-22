@@ -6,10 +6,36 @@
 import type { Result, ApiError } from '../types';
 
 export class StorageService {
+  private r2PublicUrlBase: string;
+
   constructor(
     private imagesBucket: R2Bucket,
-    private reportsBucket: R2Bucket
-  ) {}
+    private reportsBucket: R2Bucket,
+    r2PublicUrlBase?: string
+  ) {
+    this.r2PublicUrlBase = r2PublicUrlBase || '';
+  }
+
+  /**
+   * Check if public URL access is configured
+   */
+  hasPublicAccess(): boolean {
+    return !!this.r2PublicUrlBase;
+  }
+
+  /**
+   * Get public URL for an image.
+   * Requires R2_PUBLIC_URL_BASE to be configured.
+   * Returns null if public access is not enabled.
+   */
+  getPublicUrl(key: string): string | null {
+    if (!this.r2PublicUrlBase) {
+      return null;
+    }
+    // R2 public URL format: https://<bucket>.<account>.r2.dev/<key>
+    // The R2_PUBLIC_URL_BASE should be the full base URL
+    return `${this.r2PublicUrlBase}/${key}`;
+  }
 
   // ============ Image Operations ============
 

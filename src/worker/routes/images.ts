@@ -49,7 +49,7 @@ app.post('/upload', async (c) => {
   }
 
   const db = new DatabaseService(c.env.SMOKESCAN_DB);
-  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
+  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS, c.env.R2_PUBLIC_URL_BASE);
 
   // Verify assessment exists
   const assessmentResult = await db.getAssessment(assessmentId);
@@ -86,7 +86,7 @@ app.post('/upload', async (c) => {
 // GET /api/images/:key - Get image by R2 key
 app.get('/:key{.+}', async (c) => {
   const key = c.req.param('key');
-  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
+  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS, c.env.R2_PUBLIC_URL_BASE);
 
   const result = await storage.getImage(key);
 
@@ -120,7 +120,7 @@ app.get('/assessment/:assessmentId', async (c) => {
 app.delete('/:id', async (c) => {
   const { id } = c.req.param();
   const db = new DatabaseService(c.env.SMOKESCAN_DB);
-  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
+  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS, c.env.R2_PUBLIC_URL_BASE);
 
   // Get image record first to get R2 key
   const imageResult = await db.deleteImage(id);

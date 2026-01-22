@@ -18,6 +18,7 @@ import runpod
 import torch
 import requests
 import re
+import gc
 from PIL import Image
 from io import BytesIO
 import base64
@@ -48,6 +49,17 @@ def load_model():
         device_map="auto"
     ).eval()
     print("[Handler] Model loaded successfully")
+
+
+def clear_memory():
+    """Clear GPU memory between passes to prevent fragmentation OOM."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        # Log memory state for debugging
+        allocated = torch.cuda.memory_allocated() / 1024**3
+        reserved = torch.cuda.memory_reserved() / 1024**3
+        print(f"[Memory] Cleared cache. Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB")
 
 
 # System prompts for two-pass generation
@@ -145,13 +157,27 @@ Answer the user's question based on the assessment context and FDAM methodology 
 
 
 def decode_image(image_data: str) -> Image.Image:
-    """Decode base64 image data to PIL Image"""
-    if image_data.startswith("data:"):
-        # Extract base64 from data URI
+    """Decode image from URL, data URI, or raw base64.
+
+    Supports:
+    - URLs (http:// or https://) - downloads image directly
+    - Data URIs (data:image/...;base64,...) - extracts and decodes base64
+    - Raw base64 strings - decodes directly
+    """
+    if image_data.startswith("http://") or image_data.startswith("https://"):
+        # URL - download the image
+        print(f"[Handler] Downloading image from URL: {image_data[:80]}...")
+        headers = {"User-Agent": "SmokeScan/1.0 (Fire Damage Assessment)"}
+        response = requests.get(image_data, timeout=60, headers=headers)
+        response.raise_for_status()
+        return Image.open(BytesIO(response.content))
+    elif image_data.startswith("data:"):
+        # Data URI - extract and decode base64
         _, data = image_data.split(",", 1)
+        return Image.open(BytesIO(base64.b64decode(data)))
     else:
-        data = image_data
-    return Image.open(BytesIO(base64.b64decode(data)))
+        # Raw base64
+        return Image.open(BytesIO(base64.b64decode(image_data)))
 
 
 def extract_images_and_text(messages: list) -> tuple:
@@ -383,6 +409,9 @@ def handle_analysis(images: list, user_text: str, max_tokens: int) -> dict:
     )
     print(f"[Handler] Pass 1 output: {pass1_output[:500]}...")
 
+    # === MEMORY CLEANUP after Pass 1 ===
+    clear_memory()
+
     # === RAG FETCH (Deterministic) ===
     observations = extract_observations(pass1_output)
     rag_queries = get_rag_queries(user_text, observations)
@@ -396,6 +425,9 @@ def handle_analysis(images: list, user_text: str, max_tokens: int) -> dict:
         print(f"[Handler] Extracted metadata: {metadata_section[:200]}...")
     else:
         print("[Handler] No metadata section found in user prompt")
+
+    # === MEMORY CLEANUP before Pass 2 ===
+    clear_memory()
 
     # === PASS 2: Select prompt based on image presence ===
     if images:
@@ -441,12 +473,18 @@ def handle_chat(images: list, user_text: str, session_context: str, max_tokens: 
     )
     print(f"[Handler] Chat Pass 1 output: {pass1_output[:500]}...")
 
+    # === MEMORY CLEANUP after Chat Pass 1 ===
+    clear_memory()
+
     # === RAG FETCH (Deterministic) ===
     analysis = extract_analysis(pass1_output)
     rag_queries = get_rag_queries(user_text, analysis)
     print(f"[Handler] Chat deterministic RAG queries: {rag_queries}")
 
     rag_context = query_rag(rag_queries)
+
+    # === MEMORY CLEANUP before Chat Pass 2 ===
+    clear_memory()
 
     # === PASS 2: Answer Question ===
     pass2_prompt = CHAT_PASS2_PROMPT_TEMPLATE.format(

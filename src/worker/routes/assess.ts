@@ -50,7 +50,11 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
     analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
   });
   const sessionService = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
-  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
+  const storage = new StorageService(
+    c.env.SMOKESCAN_IMAGES,
+    c.env.SMOKESCAN_REPORTS,
+    c.env.R2_PUBLIC_URL_BASE
+  );
 
   // Generate sessionId first (used as prefix for R2 storage)
   const sessionId = sessionService.generateSessionId();
@@ -98,9 +102,19 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
   }
   console.log(`[Assess] Saved ${imageR2Keys.length}/${images.length} images to R2`);
 
+  // Determine image format for RunPod: prefer public URLs (avoids 10MB limit)
+  let imagesToSubmit: string[];
+  if (storage.hasPublicAccess()) {
+    imagesToSubmit = imageR2Keys.map(key => storage.getPublicUrl(key)!);
+    console.log(`[Assess] Using R2 public URLs for ${imagesToSubmit.length} images`);
+  } else {
+    imagesToSubmit = images;
+    console.log(`[Assess] Using base64 for ${images.length} images`);
+  }
+
   // Call Qwen-Agent endpoint (handles RAG internally via fdam_rag tool)
-  console.log(`[Assess] Sending ${images.length} images to Qwen-Agent`);
-  const assessResult = await runpod.assess(images, metadata);
+  console.log(`[Assess] Sending ${imagesToSubmit.length} images to Qwen-Agent`);
+  const assessResult = await runpod.assess(imagesToSubmit, metadata);
   if (!assessResult.success) {
     return c.json(
       { success: false, error: assessResult.error },
@@ -186,7 +200,11 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
     analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
   });
   const sessionService = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
-  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
+  const storage = new StorageService(
+    c.env.SMOKESCAN_IMAGES,
+    c.env.SMOKESCAN_REPORTS,
+    c.env.R2_PUBLIC_URL_BASE
+  );
 
   // Generate jobId and sessionId
   const jobId = crypto.randomUUID();
@@ -243,9 +261,21 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
   }
   console.log(`[AssessSubmit] Saved ${imageR2Keys.length}/${images.length} images to R2`);
 
+  // Determine image format for RunPod: prefer public URLs (avoids 10MB limit)
+  let imagesToSubmit: string[];
+  if (storage.hasPublicAccess()) {
+    // Use public R2 URLs - no payload size limit
+    imagesToSubmit = imageR2Keys.map(key => storage.getPublicUrl(key)!);
+    console.log(`[AssessSubmit] Using R2 public URLs for ${imagesToSubmit.length} images`);
+  } else {
+    // Fall back to base64 (subject to 10MB RunPod limit)
+    imagesToSubmit = images;
+    console.log(`[AssessSubmit] Using base64 for ${images.length} images (R2_PUBLIC_URL_BASE not configured)`);
+  }
+
   // Submit job to RunPod (non-blocking)
   console.log(`[AssessSubmit] Submitting job to RunPod`);
-  const submitResult = await runpod.submitJob(images, metadata);
+  const submitResult = await runpod.submitJob(imagesToSubmit, metadata);
   if (!submitResult.success) {
     return c.json(
       { success: false, error: submitResult.error },
