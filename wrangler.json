@@ -52,6 +52,6 @@
 	},
 	"vars": {
 		"RUNPOD_ANALYSIS_ENDPOINT_ID": "4fu896ozb83lxq",
-		"R2_PUBLIC_URL_BASE": "https://pub-0063e4bca22d4a929e7529f676667a14.r2.dev/smokescan-images"
+		"R2_PUBLIC_URL_BASE": "https://pub-0063e4bca22d4a929e7529f676667a14.r2.dev"
 	}
 }
