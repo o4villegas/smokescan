@@ -298,7 +298,12 @@ export function MetadataForm({
 
           {/* Row 4: Sensory Observations */}
           <div className="space-y-4">
-            <Label className="text-base font-medium">Sensory Observations</Label>
+            <div className="space-y-1">
+              <Label className="text-base font-medium">Sensory Observations</Label>
+              <p className="text-xs text-muted-foreground">
+                Field observations that photos cannot capture. The AI uses these as context alongside visual evidence.
+              </p>
+            </div>
 
             {/* Smoke Odor */}
             <div className="space-y-3 pl-1">
@@ -340,7 +345,12 @@ export function MetadataForm({
 
             {/* White Wipe Test */}
             <div className="space-y-3 pl-1">
-              <Label htmlFor="white-wipe" className="text-sm">White Wipe Test Result</Label>
+              <div className="space-y-1">
+                <Label htmlFor="white-wipe" className="text-sm">White Wipe Test Result</Label>
+                <p className="text-xs text-muted-foreground">
+                  Visual evidence of structural damage may indicate more severe conditions than surface deposits suggest.
+                </p>
+              </div>
 
               {!useWhiteWipeFreeText ? (
                 <div className="flex items-center gap-2">

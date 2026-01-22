@@ -387,7 +387,7 @@ export function AssessmentWizard() {
           <CardHeader>
             <CardTitle className="text-xl">Assessment Details</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Enter property information, then add damage photos.
+              Enter property details, then add damage photos. The AI analyzes your images and uses field observations as context for a comprehensive FDAM assessment.
             </p>
           </CardHeader>
           <CardContent>
