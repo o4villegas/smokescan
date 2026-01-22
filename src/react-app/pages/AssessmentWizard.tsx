@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ImageUpload, MetadataForm, ProcessingView, AssessmentReport, ChatInterface } from '../components';
 import { submitAssessmentJob, getJobStatus, getJobResult, sendChatMessage } from '../lib/api';
-import type { AssessmentMetadata, AssessmentReport as ReportType, ChatMessage, RoomType } from '../types';
+import type { AssessmentMetadata, AssessmentReport as ReportType, ChatMessage, RoomType, StructureType } from '../types';
 
 type WizardStep = 'upload' | 'metadata' | 'processing' | 'complete' | 'chat';
 
@@ -20,6 +20,7 @@ type WizardState = {
   sessionId: string | null;
   chatHistory: ChatMessage[];
   isLoading: boolean;
+  isLoadingAssessment: boolean; // True while fetching assessment data for pre-fill
   error: string | null;
   processingTime?: number;
 };
@@ -37,6 +38,7 @@ export function AssessmentWizard() {
     sessionId: null,
     chatHistory: [],
     isLoading: false,
+    isLoadingAssessment: !!assessmentId, // True if we need to fetch assessment data
     error: null,
   });
 
@@ -45,6 +47,13 @@ export function AssessmentWizard() {
 
   // Polling interval ref for cleanup
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track consecutive polling failures (BUG-004)
+  const consecutiveFailuresRef = useRef(0);
+
+  // Polling constants
+  const POLLING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (BUG-007)
+  const POLLING_INTERVAL_MS = 5000; // 5 seconds
+  const MAX_CONSECUTIVE_FAILURES = 3;
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -55,29 +64,78 @@ export function AssessmentWizard() {
     };
   }, []);
 
-  // Fetch existing assessment to pre-populate roomType when coming from project flow
+  const updateState = useCallback((updates: Partial<WizardState>) => {
+    setState((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  // Fetch existing assessment to pre-populate roomType and FDAM metadata when coming from project flow
   useEffect(() => {
     if (assessmentId) {
       fetch(`/api/assessments/${assessmentId}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data.success && data.data?.room_type) {
-            setExistingRoomType(data.data.room_type);
+          if (data.success && data.data) {
+            const assessment = data.data;
+            setExistingRoomType(assessment.room_type);
+
+            // Build initial metadata from pre-filled FDAM fields (if dimensions exist)
+            if (assessment.dimensions) {
+              const initialMetadata: AssessmentMetadata = {
+                roomType: assessment.room_type as RoomType,
+                structureType: (assessment.structure_type as StructureType) || 'single-family',
+                floor_level: assessment.floor_level,
+                dimensions: {
+                  length_ft: assessment.dimensions.length_ft,
+                  width_ft: assessment.dimensions.width_ft,
+                  height_ft: assessment.dimensions.height_ft,
+                },
+                sensory_observations: assessment.sensory_observations,
+                // fireOrigin and notes intentionally omitted (transient, not stored)
+              };
+              updateState({ metadata: initialMetadata, isLoadingAssessment: false });
+            } else {
+              updateState({ isLoadingAssessment: false });
+            }
+          } else {
+            updateState({ isLoadingAssessment: false });
           }
         })
-        .catch(console.error);
+        .catch((err) => {
+          console.error(err);
+          updateState({ isLoadingAssessment: false });
+        });
     }
-  }, [assessmentId]);
-
-  const updateState = useCallback((updates: Partial<WizardState>) => {
-    setState((prev) => ({ ...prev, ...updates }));
-  }, []);
+  }, [assessmentId, updateState]);
 
   const handleImagesChange = useCallback(
     (images: File[], previewUrls: string[]) => {
       updateState({ images, imagePreviewUrls: previewUrls, error: null });
     },
     [updateState]
+  );
+
+  // Helper function for retrying PATCH with exponential backoff (BUG-003)
+  const updateAssessmentWithRetry = useCallback(
+    async (id: string, updateData: object, maxRetries = 3): Promise<boolean> => {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await fetch(`/api/assessments/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updateData),
+          });
+          if (response.ok) return true;
+          console.warn(`[Wizard] PATCH attempt ${attempt} failed: ${response.status}`);
+        } catch (e) {
+          console.warn(`[Wizard] PATCH attempt ${attempt} error:`, e);
+        }
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt)); // Exponential backoff
+        }
+      }
+      return false;
+    },
+    []
   );
 
   const handleMetadataSubmit = useCallback(
@@ -102,15 +160,50 @@ export function AssessmentWizard() {
         const { jobId } = submitResult.data;
         console.log(`[Wizard] Job submitted: ${jobId}`);
 
-        // Poll for completion every 5 seconds
+        // Reset consecutive failures counter
+        consecutiveFailuresRef.current = 0;
+
+        // Poll for completion with timeout
         pollIntervalRef.current = setInterval(async () => {
+          // Check for timeout (BUG-007)
+          if (Date.now() - startTime > POLLING_TIMEOUT_MS) {
+            console.error('[Wizard] Polling timeout reached');
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            updateState({
+              step: 'metadata',
+              isLoading: false,
+              error: 'Assessment is taking longer than expected. Please try again or contact support if the issue persists.',
+            });
+            return;
+          }
+
           try {
             const statusResult = await getJobStatus(jobId);
 
             if (!statusResult.success) {
-              console.warn('[Wizard] Status check failed, will retry');
+              // Track consecutive failures (BUG-004)
+              consecutiveFailuresRef.current++;
+              console.warn(`[Wizard] Status check failed (${consecutiveFailuresRef.current}/${MAX_CONSECUTIVE_FAILURES}), will retry`);
+
+              if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+                if (pollIntervalRef.current) {
+                  clearInterval(pollIntervalRef.current);
+                  pollIntervalRef.current = null;
+                }
+                updateState({
+                  step: 'metadata',
+                  isLoading: false,
+                  error: 'Unable to check assessment status. Please check your connection and try again.',
+                });
+              }
               return; // Keep polling on transient errors
             }
+
+            // Reset consecutive failures on success
+            consecutiveFailuresRef.current = 0;
 
             const { status, error } = statusResult.data;
             console.log(`[Wizard] Job ${jobId} status: ${status}`);
@@ -127,23 +220,17 @@ export function AssessmentWizard() {
               const processingTime = Date.now() - startTime;
 
               if (resultResponse.success) {
-                // Update the assessment in database with results and session_id
+                // Update the assessment in database with results and session_id (BUG-003: retry with warning)
                 if (assessmentId) {
-                  try {
-                    const patchResponse = await fetch(`/api/assessments/${assessmentId}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        status: 'completed',
-                        executive_summary: resultResponse.data.report.executiveSummary,
-                        session_id: resultResponse.data.sessionId,
-                      }),
-                    });
-                    if (!patchResponse.ok) {
-                      console.error('Failed to update assessment status:', patchResponse.status);
-                    }
-                  } catch (patchError) {
-                    console.error('Failed to update assessment:', patchError);
+                  const patchSuccess = await updateAssessmentWithRetry(assessmentId, {
+                    status: 'completed',
+                    executive_summary: resultResponse.data.report.executiveSummary,
+                    session_id: resultResponse.data.sessionId,
+                  });
+
+                  if (!patchSuccess) {
+                    console.error('[Wizard] Failed to persist assessment status after 3 retries');
+                    // Non-blocking warning - assessment is still viewable
                   }
                 }
 
@@ -177,9 +264,23 @@ export function AssessmentWizard() {
             // For 'pending' or 'in_progress', keep polling
           } catch (pollError) {
             console.error('[Wizard] Polling error:', pollError);
-            // Keep polling on errors
+            // Track consecutive failures (BUG-004)
+            consecutiveFailuresRef.current++;
+
+            if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+              updateState({
+                step: 'metadata',
+                isLoading: false,
+                error: 'Unable to check assessment status. Please check your connection and try again.',
+              });
+            }
+            // Keep polling on transient errors
           }
-        }, 5000); // Poll every 5 seconds
+        }, POLLING_INTERVAL_MS);
       } catch {
         updateState({
           step: 'metadata',
@@ -188,7 +289,7 @@ export function AssessmentWizard() {
         });
       }
     },
-    [state.images, assessmentId, updateState]
+    [state.images, assessmentId, updateState, updateAssessmentWithRetry, POLLING_TIMEOUT_MS, POLLING_INTERVAL_MS, MAX_CONSECUTIVE_FAILURES]
   );
 
   const handleChatMessage = useCallback(
@@ -286,6 +387,7 @@ export function AssessmentWizard() {
           previewUrls={state.imagePreviewUrls}
           onImagesChange={handleImagesChange}
           onNext={() => updateState({ step: 'metadata', error: null })}
+          isLoadingMetadata={state.isLoadingAssessment}
         />
       )}
 
@@ -295,6 +397,7 @@ export function AssessmentWizard() {
           onBack={() => updateState({ step: 'upload', error: null })}
           isLoading={state.isLoading}
           initialRoomType={existingRoomType}
+          initialData={state.metadata}
         />
       )}
 

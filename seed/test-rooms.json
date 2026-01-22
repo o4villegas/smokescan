@@ -1,0 +1,135 @@
+{
+  "project": {
+    "name": "Test Project - Mixed Use Building Fire",
+    "address": "123 Test Street, Demo City, TS 12345",
+    "client_name": "SmokeScan Test Suite",
+    "notes": "Seed project containing 7 pre-configured rooms for testing assessments"
+  },
+  "rooms": [
+    {
+      "room_name": "Bar Area",
+      "room_type": "commercial-retail",
+      "structure_type": "commercial",
+      "floor_level": "ground",
+      "dimensions": {
+        "length_ft": 25,
+        "width_ft": 20,
+        "height_ft": 12,
+        "area_sf": 500,
+        "volume_cf": 6000
+      },
+      "sensory_observations": {
+        "smoke_odor_present": true,
+        "smoke_odor_intensity": "strong",
+        "white_wipe_result": "heavy-deposits"
+      }
+    },
+    {
+      "room_name": "Bar and Dining",
+      "room_type": "commercial-retail",
+      "structure_type": "commercial",
+      "floor_level": "ground",
+      "dimensions": {
+        "length_ft": 40,
+        "width_ft": 30,
+        "height_ft": 14,
+        "area_sf": 1200,
+        "volume_cf": 16800
+      },
+      "sensory_observations": {
+        "smoke_odor_present": true,
+        "smoke_odor_intensity": "moderate",
+        "white_wipe_result": "moderate-deposits"
+      }
+    },
+    {
+      "room_name": "Bedroom",
+      "room_type": "residential-bedroom",
+      "structure_type": "single-family",
+      "floor_level": "2nd",
+      "dimensions": {
+        "length_ft": 14,
+        "width_ft": 12,
+        "height_ft": 9,
+        "area_sf": 168,
+        "volume_cf": 1512
+      },
+      "sensory_observations": {
+        "smoke_odor_present": true,
+        "smoke_odor_intensity": "faint",
+        "white_wipe_result": "light-deposits"
+      }
+    },
+    {
+      "room_name": "Dining Room",
+      "room_type": "residential-living",
+      "structure_type": "single-family",
+      "floor_level": "1st",
+      "dimensions": {
+        "length_ft": 16,
+        "width_ft": 14,
+        "height_ft": 10,
+        "area_sf": 224,
+        "volume_cf": 2240
+      },
+      "sensory_observations": {
+        "smoke_odor_present": false,
+        "white_wipe_result": "clean"
+      }
+    },
+    {
+      "room_name": "Factory",
+      "room_type": "industrial-manufacturing",
+      "structure_type": "industrial",
+      "floor_level": "ground",
+      "dimensions": {
+        "length_ft": 80,
+        "width_ft": 60,
+        "height_ft": 20,
+        "area_sf": 4800,
+        "volume_cf": 96000
+      },
+      "sensory_observations": {
+        "smoke_odor_present": true,
+        "smoke_odor_intensity": "strong",
+        "white_wipe_result": "heavy-deposits"
+      }
+    },
+    {
+      "room_name": "Kitchen",
+      "room_type": "residential-kitchen",
+      "structure_type": "single-family",
+      "floor_level": "1st",
+      "dimensions": {
+        "length_ft": 12,
+        "width_ft": 10,
+        "height_ft": 9,
+        "area_sf": 120,
+        "volume_cf": 1080
+      },
+      "sensory_observations": {
+        "smoke_odor_present": true,
+        "smoke_odor_intensity": "moderate",
+        "white_wipe_result": "moderate-deposits"
+      }
+    },
+    {
+      "room_name": "Living Room",
+      "room_type": "residential-living",
+      "structure_type": "single-family",
+      "floor_level": "1st",
+      "dimensions": {
+        "length_ft": 20,
+        "width_ft": 18,
+        "height_ft": 10,
+        "area_sf": 360,
+        "volume_cf": 3600
+      },
+      "sensory_observations": {
+        "smoke_odor_present": true,
+        "smoke_odor_intensity": "faint",
+        "white_wipe_result": "light-deposits"
+      }
+    }
+  ]
+}

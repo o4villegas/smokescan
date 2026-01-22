@@ -33,6 +33,8 @@ const ZoneSchema = z.enum(['burn', 'near-field', 'far-field']);
 const SeveritySchema = z.enum(['heavy', 'moderate', 'light', 'trace', 'none']);
 
 // FDAM field schemas
+const StructureTypeSchema = z.enum(['single-family', 'multi-family', 'commercial', 'industrial', 'mixed-use']);
+
 const FloorLevelSchema = z.enum(['basement', 'ground', '1st', '2nd', '3rd', '4th+', 'attic']);
 
 const RoomDimensionsSchema = z.object({
@@ -56,7 +58,11 @@ const CreateAssessmentSchema = z.object({
   project_id: z.string().uuid(),
   room_type: RoomTypeSchema,
   room_name: z.string().max(200).optional(),
-  // FDAM fields removed - all detailed metadata collected in MetadataForm after image upload
+  // FDAM fields (optional - pre-filled for seeded data, or collected later in wizard)
+  structure_type: StructureTypeSchema.optional(),
+  floor_level: FloorLevelSchema.optional(),
+  dimensions: RoomDimensionsSchema.optional(),
+  sensory_observations: SensoryObservationsSchema.optional(),
 });
 
 const UpdateAssessmentSchema = z.object({
@@ -68,6 +74,7 @@ const UpdateAssessmentSchema = z.object({
   executive_summary: z.string().max(5000).optional(),
   session_id: z.string().uuid().optional(), // For chat functionality
   // FDAM fields (human inputs that cannot be determined by photo analysis)
+  structure_type: StructureTypeSchema.optional(),
   floor_level: FloorLevelSchema.optional(),
   dimensions: RoomDimensionsSchema.optional(),
   sensory_observations: SensoryObservationsSchema.optional(),

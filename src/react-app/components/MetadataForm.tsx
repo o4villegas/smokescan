@@ -48,31 +48,50 @@ type MetadataFormProps = {
   onBack: () => void;
   isLoading: boolean;
   initialRoomType?: RoomType;
+  initialData?: AssessmentMetadata | null;
 };
 
-export function MetadataForm({ onSubmit, onBack, isLoading, initialRoomType }: MetadataFormProps) {
-  // Basic metadata
-  const [roomType, setRoomType] = useState<RoomType>(initialRoomType ?? 'residential-living');
-  const [structureType, setStructureType] = useState<StructureType>('single-family');
+export function MetadataForm({ onSubmit, onBack, isLoading, initialRoomType, initialData }: MetadataFormProps) {
+  // Basic metadata - prefer initialData over initialRoomType
+  const [roomType, setRoomType] = useState<RoomType>(
+    initialData?.roomType ?? initialRoomType ?? 'residential-living'
+  );
+  const [structureType, setStructureType] = useState<StructureType>(
+    initialData?.structureType ?? 'single-family'
+  );
 
   // Floor level (optional)
-  const [floorLevel, setFloorLevel] = useState<FloorLevel | ''>('');
+  const [floorLevel, setFloorLevel] = useState<FloorLevel | ''>(
+    initialData?.floor_level ?? ''
+  );
 
   // Dimensions (MANDATORY)
-  const [lengthFt, setLengthFt] = useState<string>('');
-  const [widthFt, setWidthFt] = useState<string>('');
-  const [heightFt, setHeightFt] = useState<string>('');
+  const [lengthFt, setLengthFt] = useState<string>(
+    initialData?.dimensions?.length_ft?.toString() ?? ''
+  );
+  const [widthFt, setWidthFt] = useState<string>(
+    initialData?.dimensions?.width_ft?.toString() ?? ''
+  );
+  const [heightFt, setHeightFt] = useState<string>(
+    initialData?.dimensions?.height_ft?.toString() ?? ''
+  );
 
   // Sensory observations (optional)
-  const [smokeOdorPresent, setSmokeOdorPresent] = useState(false);
-  const [smokeOdorIntensity, setSmokeOdorIntensity] = useState<SmokeOdorIntensity | ''>('');
-  const [whiteWipeResult, setWhiteWipeResult] = useState<string>('');
+  const [smokeOdorPresent, setSmokeOdorPresent] = useState(
+    initialData?.sensory_observations?.smoke_odor_present ?? false
+  );
+  const [smokeOdorIntensity, setSmokeOdorIntensity] = useState<SmokeOdorIntensity | ''>(
+    initialData?.sensory_observations?.smoke_odor_intensity ?? ''
+  );
+  const [whiteWipeResult, setWhiteWipeResult] = useState<string>(
+    initialData?.sensory_observations?.white_wipe_result ?? ''
+  );
   const [whiteWipeFreeText, setWhiteWipeFreeText] = useState('');
   const [useWhiteWipeFreeText, setUseWhiteWipeFreeText] = useState(false);
 
   // Additional info
-  const [fireOrigin, setFireOrigin] = useState('');
-  const [notes, setNotes] = useState('');
+  const [fireOrigin, setFireOrigin] = useState(initialData?.fireOrigin ?? '');
+  const [notes, setNotes] = useState(initialData?.notes ?? '');
 
   // Auto-calculate area and volume
   const calculatedValues = useMemo(() => {

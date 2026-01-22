@@ -25,6 +25,7 @@ import type {
 } from '../types';
 
 // Raw database row type (JSON fields are strings)
+// structure_type is stored directly (not JSON), so it's inherited from Assessment
 type AssessmentRow = Omit<Assessment, 'dimensions' | 'sensory_observations'> & {
   dimensions_json: string | null;
   sensory_observations_json: string | null;
@@ -44,6 +45,7 @@ function parseAssessmentRow(row: AssessmentRow): Assessment {
     confidence_score: row.confidence_score,
     executive_summary: row.executive_summary,
     session_id: row.session_id,
+    structure_type: row.structure_type,
     floor_level: row.floor_level,
     dimensions: row.dimensions_json ? JSON.parse(row.dimensions_json) : undefined,
     sensory_observations: row.sensory_observations_json ? JSON.parse(row.sensory_observations_json) : undefined,
@@ -184,14 +186,15 @@ export class DatabaseService {
 
       await this.db
         .prepare(
-          `INSERT INTO assessments (id, project_id, room_type, room_name, floor_level, dimensions_json, sensory_observations_json, phase, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'PRE', 'draft', ?, ?)`
+          `INSERT INTO assessments (id, project_id, room_type, room_name, structure_type, floor_level, dimensions_json, sensory_observations_json, phase, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PRE', 'draft', ?, ?)`
         )
         .bind(
           id,
           input.project_id,
           input.room_type,
           input.room_name ?? null,
+          input.structure_type ?? null,
           input.floor_level ?? null,
           dimensionsJson,
           sensoryObservationsJson,
@@ -207,6 +210,7 @@ export class DatabaseService {
         room_name: input.room_name,
         phase: 'PRE',
         status: 'draft',
+        structure_type: input.structure_type,
         floor_level: input.floor_level,
         dimensions: input.dimensions,
         sensory_observations: input.sensory_observations,
@@ -316,6 +320,10 @@ export class DatabaseService {
         values.push(input.session_id);
       }
       // FDAM fields
+      if (input.structure_type !== undefined) {
+        updates.push('structure_type = ?');
+        values.push(input.structure_type);
+      }
       if (input.floor_level !== undefined) {
         updates.push('floor_level = ?');
         values.push(input.floor_level);

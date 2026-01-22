@@ -15,6 +15,7 @@ type ImageUploadProps = {
   onImagesChange: (images: File[], previewUrls: string[]) => void;
   onNext: () => void;
   maxImages?: number;
+  isLoadingMetadata?: boolean; // When true, disables Next button (waiting for metadata pre-fill)
 };
 
 export function ImageUpload({
@@ -23,6 +24,7 @@ export function ImageUpload({
   onImagesChange,
   onNext,
   maxImages = 10,
+  isLoadingMetadata = false,
 }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -159,8 +161,8 @@ export function ImageUpload({
 
         {/* Actions */}
         <div className="flex justify-end">
-          <Button onClick={onNext} disabled={images.length === 0}>
-            Continue to Details
+          <Button onClick={onNext} disabled={images.length === 0 || isLoadingMetadata}>
+            {isLoadingMetadata ? 'Loading...' : 'Continue to Details'}
           </Button>
         </div>
       </CardContent>

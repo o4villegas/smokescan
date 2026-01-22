@@ -90,6 +90,7 @@ export type Assessment = {
   confidence_score?: number;
   executive_summary?: string;
   // FDAM fields (human inputs)
+  structure_type?: StructureType;
   floor_level?: FloorLevel;
   dimensions?: RoomDimensions;
   sensory_observations?: SensoryObservations;

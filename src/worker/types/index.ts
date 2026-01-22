@@ -278,6 +278,7 @@ export type Assessment = {
   executive_summary?: string;
   session_id?: string; // For chat functionality on existing assessments
   // FDAM fields (human inputs that cannot be determined by photo analysis)
+  structure_type?: StructureType;
   floor_level?: FloorLevel;
   dimensions?: RoomDimensions;
   sensory_observations?: SensoryObservations;
@@ -360,6 +361,7 @@ export type CreateAssessmentInput = {
   room_type: RoomType;
   room_name?: string;
   // FDAM fields (human inputs)
+  structure_type?: StructureType;
   floor_level?: FloorLevel;
   dimensions?: RoomDimensions;
   sensory_observations?: SensoryObservations;
@@ -374,6 +376,7 @@ export type UpdateAssessmentInput = {
   executive_summary?: string;
   session_id?: string; // For chat functionality
   // FDAM fields (human inputs)
+  structure_type?: StructureType;
   floor_level?: FloorLevel;
   dimensions?: RoomDimensions;
   sensory_observations?: SensoryObservations;
