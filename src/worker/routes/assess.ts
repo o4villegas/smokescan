@@ -192,44 +192,54 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
   const jobId = crypto.randomUUID();
   const sessionId = sessionService.generateSessionId();
 
-  // Save images to R2 (in parallel)
+  // Save images to R2 (in parallel) - fail entire assessment if any upload fails
   console.log(`[AssessSubmit] Saving ${images.length} images to R2`);
-  const imageR2Keys: string[] = [];
-  const uploadPromises = images.map(async (base64Image, index) => {
-    let contentType = 'image/jpeg';
-    let rawBase64 = base64Image;
+  let imageR2Keys: string[];
+  try {
+    imageR2Keys = await Promise.all(
+      images.map(async (base64Image, index) => {
+        let contentType = 'image/jpeg';
+        let rawBase64 = base64Image;
 
-    if (base64Image.startsWith('data:')) {
-      const match = base64Image.match(/^data:([^;]+);base64,(.+)$/);
-      if (match) {
-        contentType = match[1];
-        rawBase64 = match[2];
-      }
-    }
+        if (base64Image.startsWith('data:')) {
+          const match = base64Image.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            contentType = match[1];
+            rawBase64 = match[2];
+          }
+        }
 
-    const binaryString = atob(rawBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
+        const binaryString = atob(rawBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
 
-    const uploadResult = await storage.uploadImage(
-      sessionId,
-      `image-${index}.${contentType.split('/')[1] || 'jpg'}`,
-      bytes.buffer,
-      contentType
+        const uploadResult = await storage.uploadImage(
+          sessionId,
+          `image-${index}.${contentType.split('/')[1] || 'jpg'}`,
+          bytes.buffer,
+          contentType
+        );
+
+        if (!uploadResult.success) {
+          throw new Error(`Failed to upload image ${index + 1}: ${uploadResult.error?.message || 'Unknown error'}`);
+        }
+        return uploadResult.data.key;
+      })
     );
-
-    if (uploadResult.success) {
-      return uploadResult.data.key;
-    }
-    console.warn(`[AssessSubmit] Failed to upload image ${index}:`, uploadResult.error);
-    return null;
-  });
-
-  const uploadedKeys = await Promise.all(uploadPromises);
-  for (const key of uploadedKeys) {
-    if (key) imageR2Keys.push(key);
+  } catch (uploadError) {
+    console.error('[AssessSubmit] Image upload failed:', uploadError);
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 500,
+          message: `Image upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`,
+        },
+      },
+      500
+    );
   }
   console.log(`[AssessSubmit] Saved ${imageR2Keys.length}/${images.length} images to R2`);
 
@@ -294,7 +304,16 @@ export async function handleAssessStatus(c: Context<{ Bindings: WorkerEnv }>) {
     );
   }
 
-  const jobState: JobState = JSON.parse(jobData);
+  let jobState: JobState;
+  try {
+    jobState = JSON.parse(jobData);
+  } catch (parseError) {
+    console.error('[AssessStatus] Failed to parse job state:', parseError);
+    return c.json(
+      { success: false, error: { code: 500, message: 'Invalid job state data' } },
+      500
+    );
+  }
 
   // If already completed or failed, return cached status
   if (jobState.status === 'completed' || jobState.status === 'failed') {
@@ -387,7 +406,16 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
     );
   }
 
-  const jobState: JobState = JSON.parse(jobData);
+  let jobState: JobState;
+  try {
+    jobState = JSON.parse(jobData);
+  } catch (parseError) {
+    console.error('[AssessResult] Failed to parse job state:', parseError);
+    return c.json(
+      { success: false, error: { code: 500, message: 'Invalid job state data' } },
+      500
+    );
+  }
 
   // Check if job is completed
   if (jobState.status !== 'completed') {

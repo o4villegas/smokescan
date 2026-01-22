@@ -8,8 +8,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ImageUpload, MetadataForm, ProcessingView, AssessmentReport, ChatInterface } from '../components';
 import { submitAssessmentJob, getJobStatus, getJobResult, sendChatMessage } from '../lib/api';
 import type { AssessmentMetadata, AssessmentReport as ReportType, ChatMessage, RoomType, StructureType } from '../types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-type WizardStep = 'upload' | 'metadata' | 'processing' | 'complete' | 'chat';
+type WizardStep = 'details' | 'processing' | 'complete' | 'chat';
 
 type WizardState = {
   step: WizardStep;
@@ -30,7 +31,7 @@ export function AssessmentWizard() {
   const navigate = useNavigate();
 
   const [state, setState] = useState<WizardState>({
-    step: 'upload',
+    step: 'details',
     images: [],
     imagePreviewUrls: [],
     metadata: null,
@@ -150,7 +151,7 @@ export function AssessmentWizard() {
 
         if (!submitResult.success) {
           updateState({
-            step: 'metadata',
+            step: 'details',
             isLoading: false,
             error: submitResult.error.message,
           });
@@ -173,7 +174,7 @@ export function AssessmentWizard() {
               pollIntervalRef.current = null;
             }
             updateState({
-              step: 'metadata',
+              step: 'details',
               isLoading: false,
               error: 'Assessment is taking longer than expected. Please try again or contact support if the issue persists.',
             });
@@ -194,7 +195,7 @@ export function AssessmentWizard() {
                   pollIntervalRef.current = null;
                 }
                 updateState({
-                  step: 'metadata',
+                  step: 'details',
                   isLoading: false,
                   error: 'Unable to check assessment status. Please check your connection and try again.',
                 });
@@ -243,7 +244,7 @@ export function AssessmentWizard() {
                 });
               } else {
                 updateState({
-                  step: 'metadata',
+                  step: 'details',
                   isLoading: false,
                   error: resultResponse.error.message,
                 });
@@ -256,7 +257,7 @@ export function AssessmentWizard() {
               }
 
               updateState({
-                step: 'metadata',
+                step: 'details',
                 isLoading: false,
                 error: error || 'Assessment processing failed',
               });
@@ -273,7 +274,7 @@ export function AssessmentWizard() {
                 pollIntervalRef.current = null;
               }
               updateState({
-                step: 'metadata',
+                step: 'details',
                 isLoading: false,
                 error: 'Unable to check assessment status. Please check your connection and try again.',
               });
@@ -283,7 +284,7 @@ export function AssessmentWizard() {
         }, POLLING_INTERVAL_MS);
       } catch {
         updateState({
-          step: 'metadata',
+          step: 'details',
           isLoading: false,
           error: 'Failed to submit assessment',
         });
@@ -381,24 +382,45 @@ export function AssessmentWizard() {
         </div>
       )}
 
-      {state.step === 'upload' && (
-        <ImageUpload
-          images={state.images}
-          previewUrls={state.imagePreviewUrls}
-          onImagesChange={handleImagesChange}
-          onNext={() => updateState({ step: 'metadata', error: null })}
-          isLoadingMetadata={state.isLoadingAssessment}
-        />
-      )}
+      {state.step === 'details' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Assessment Details</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Enter property information, then add damage photos.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-6 lg:grid-cols-5">
+              {/* Left: Metadata Form (3/5 width on lg+) - PRIMARY */}
+              <div className="lg:col-span-3">
+                <MetadataForm
+                  key={`form-${existingRoomType ?? 'loading'}`}
+                  onSubmit={handleMetadataSubmit}
+                  onBack={() => {}} // No-op, no back needed
+                  isLoading={state.isLoading}
+                  initialRoomType={existingRoomType}
+                  initialData={state.metadata}
+                  embedded={true}
+                  imagesCount={state.images.length}
+                  isLoadingAssessment={state.isLoadingAssessment}
+                />
+              </div>
 
-      {state.step === 'metadata' && (
-        <MetadataForm
-          onSubmit={handleMetadataSubmit}
-          onBack={() => updateState({ step: 'upload', error: null })}
-          isLoading={state.isLoading}
-          initialRoomType={existingRoomType}
-          initialData={state.metadata}
-        />
+              {/* Right: Image Upload (2/5 width on lg+) - SECONDARY */}
+              <div className="lg:col-span-2">
+                <ImageUpload
+                  images={state.images}
+                  previewUrls={state.imagePreviewUrls}
+                  onImagesChange={handleImagesChange}
+                  onNext={() => {}} // No-op, form handles submit
+                  isLoadingMetadata={state.isLoadingAssessment}
+                  embedded={true}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {state.step === 'processing' && (

@@ -167,13 +167,38 @@ ${session.report.fdamRecommendations.slice(0, 5).map((r) => `- ${r}`).join('\n')
   const response = chatResult.data;
   const timestamp = new Date().toISOString();
 
-  // Update session with new messages
-  session.conversationHistory.push(
-    { role: 'user', content: message, timestamp },
-    { role: 'assistant', content: response, timestamp }
-  );
+  // Reload session and merge changes to avoid race condition
+  // (another concurrent request may have modified imageR2Keys or conversationHistory)
+  const freshSessionResult = await sessionService.load(sessionId);
+  if (freshSessionResult.success) {
+    const freshSession = freshSessionResult.data;
 
-  await sessionService.save(session);
+    // Merge new image keys (avoid duplicates)
+    if (newImageKeys.length > 0) {
+      const existingKeySet = new Set(freshSession.imageR2Keys);
+      for (const key of newImageKeys) {
+        if (!existingKeySet.has(key)) {
+          freshSession.imageR2Keys.push(key);
+        }
+      }
+    }
+
+    // Append new messages to conversation history
+    freshSession.conversationHistory.push(
+      { role: 'user', content: message, timestamp },
+      { role: 'assistant', content: response, timestamp }
+    );
+
+    await sessionService.save(freshSession);
+  } else {
+    // Fallback: save original session if reload fails (edge case)
+    console.warn('[Chat] Failed to reload session for merge, saving original');
+    session.conversationHistory.push(
+      { role: 'user', content: message, timestamp },
+      { role: 'assistant', content: response, timestamp }
+    );
+    await sessionService.save(session);
+  }
 
   return c.json({
     success: true,

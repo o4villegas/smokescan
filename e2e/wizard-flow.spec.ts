@@ -85,10 +85,38 @@ const mockChatResponse = {
 
 /**
  * Setup API mocks for all tests
+ * Updated to use polling-based assessment endpoints
  */
 async function setupMocks(page: Page) {
-  // Mock /api/assess endpoint
-  await page.route('**/api/assess', async (route) => {
+  // Mock /api/assess/submit - returns jobId immediately
+  await page.route('**/api/assess/submit', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { jobId: 'test-job-123' },
+      }),
+    });
+  });
+
+  // Mock /api/assess/status/:jobId - return completed immediately for fast tests
+  await page.route('**/api/assess/status/*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          jobId: 'test-job-123',
+          status: 'completed',
+        },
+      }),
+    });
+  });
+
+  // Mock /api/assess/result/:jobId - returns the assessment report
+  await page.route('**/api/assess/result/*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -126,42 +154,60 @@ async function setupMocks(page: Page) {
   });
 }
 
+// Helper: Create a minimal PNG buffer (1x1 transparent pixel)
+const pngBuffer = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+  0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
 test.describe('Assessment Wizard Flow', () => {
   test.beforeEach(async ({ page }) => {
     await setupMocks(page);
   });
 
-  test('should load wizard at correct route', async ({ page }) => {
+  test('should load wizard with combined details page', async ({ page }) => {
     await page.goto('/projects/test-proj/assess/test-assess');
 
-    // Verify we're on the upload step
-    await expect(page.getByText('Upload Damage Photos')).toBeVisible();
+    // Verify we're on the combined details page
+    await expect(page.getByText('Assessment Details')).toBeVisible();
+    // Both form fields and image upload should be visible
     await expect(page.locator('#file-input')).toBeAttached();
+    await expect(page.locator('#room-type')).toBeVisible();
+    await expect(page.locator('#length-ft')).toBeVisible();
   });
 
-  test('should show continue button disabled when no images', async ({ page }) => {
+  test('should show Start Assessment button disabled when no images or dimensions', async ({ page }) => {
     await page.goto('/projects/test-proj/assess/test-assess');
 
-    const continueButton = page.getByRole('button', { name: 'Continue to Details' });
-    await expect(continueButton).toBeDisabled();
-  });
+    // Button should be disabled initially (no images, no dimensions)
+    const submitButton = page.getByRole('button', { name: 'Start Assessment' });
+    await expect(submitButton).toBeDisabled();
 
-  test('should enable continue button after image upload', async ({ page }) => {
-    await page.goto('/projects/test-proj/assess/test-assess');
-
-    // Upload a test image using setInputFiles with a buffer
+    // Add an image - still disabled (no dimensions)
     const fileInput = page.locator('#file-input');
+    await fileInput.setInputFiles({
+      name: 'test-image.png',
+      mimeType: 'image/png',
+      buffer: pngBuffer,
+    });
+    await expect(submitButton).toBeDisabled();
 
-    // Create a minimal PNG buffer (1x1 transparent pixel)
-    const pngBuffer = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
+    // Fill dimensions - should enable
+    await page.locator('#length-ft').fill('20');
+    await page.locator('#width-ft').fill('15');
+    await page.locator('#height-ft').fill('10');
+    await expect(submitButton).toBeEnabled();
+  });
 
+  test('should show image preview after upload', async ({ page }) => {
+    await page.goto('/projects/test-proj/assess/test-assess');
+
+    // Upload a test image
+    const fileInput = page.locator('#file-input');
     await fileInput.setInputFiles({
       name: 'test-image.png',
       mimeType: 'image/png',
@@ -170,62 +216,13 @@ test.describe('Assessment Wizard Flow', () => {
 
     // Verify preview appears
     await expect(page.locator('img[alt="Upload 1"]')).toBeVisible();
-
-    // Verify continue button is enabled
-    const continueButton = page.getByRole('button', { name: 'Continue to Details' });
-    await expect(continueButton).toBeEnabled();
-  });
-
-  test('should navigate to metadata form after continue', async ({ page }) => {
-    await page.goto('/projects/test-proj/assess/test-assess');
-
-    // Upload image
-    const fileInput = page.locator('#file-input');
-    const pngBuffer = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
-    await fileInput.setInputFiles({
-      name: 'test-image.png',
-      mimeType: 'image/png',
-      buffer: pngBuffer,
-    });
-
-    // Click continue
-    await page.getByRole('button', { name: 'Continue to Details' }).click();
-
-    // Verify metadata form is visible
-    await expect(page.getByText('Property Details')).toBeVisible();
-    await expect(page.locator('#room-type')).toBeVisible();
-    await expect(page.locator('#structure-type')).toBeVisible();
   });
 
   test('should pre-populate room type from existing assessment (project flow)', async ({ page }) => {
     await page.goto('/projects/test-proj/assess/test-assess');
 
-    // Upload image
-    const fileInput = page.locator('#file-input');
-    const pngBuffer = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
-    await fileInput.setInputFiles({
-      name: 'test-image.png',
-      mimeType: 'image/png',
-      buffer: pngBuffer,
-    });
-
-    // Navigate to metadata form
-    await page.getByRole('button', { name: 'Continue to Details' }).click();
-    await expect(page.getByText('Property Details')).toBeVisible();
+    // Wait for the page to load and fetch assessment data
+    await expect(page.getByText('Assessment Details')).toBeVisible();
 
     // Verify room type is pre-populated with 'commercial-office' from mock
     // The select trigger should show "Commercial - Office" text
@@ -233,28 +230,16 @@ test.describe('Assessment Wizard Flow', () => {
     await expect(roomTypeSelect).toContainText('Commercial - Office');
   });
 
-  test('should fill metadata form and submit assessment', async ({ page }) => {
+  test('should fill form and submit assessment', async ({ page }) => {
     await page.goto('/projects/test-proj/assess/test-assess');
 
     // Upload image
     const fileInput = page.locator('#file-input');
-    const pngBuffer = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
     await fileInput.setInputFiles({
       name: 'test-image.png',
       mimeType: 'image/png',
       buffer: pngBuffer,
     });
-
-    // Navigate to metadata form
-    await page.getByRole('button', { name: 'Continue to Details' }).click();
-    await expect(page.getByText('Property Details')).toBeVisible();
 
     // Room type select (Radix portal)
     await page.locator('#room-type').click();
@@ -284,22 +269,13 @@ test.describe('Assessment Wizard Flow', () => {
   test('should display all report sections after assessment', async ({ page }) => {
     await page.goto('/projects/test-proj/assess/test-assess');
 
-    // Upload and submit (condensed flow)
+    // Upload image
     const fileInput = page.locator('#file-input');
-    const pngBuffer = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
     await fileInput.setInputFiles({
       name: 'test-image.png',
       mimeType: 'image/png',
       buffer: pngBuffer,
     });
-    await page.getByRole('button', { name: 'Continue to Details' }).click();
 
     // Fill mandatory dimensions
     await page.locator('#length-ft').fill('20');
@@ -330,20 +306,11 @@ test.describe('Assessment Wizard Flow', () => {
 
     // Complete assessment flow
     const fileInput = page.locator('#file-input');
-    const pngBuffer = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
     await fileInput.setInputFiles({
       name: 'test-image.png',
       mimeType: 'image/png',
       buffer: pngBuffer,
     });
-    await page.getByRole('button', { name: 'Continue to Details' }).click();
 
     // Fill mandatory dimensions
     await page.locator('#length-ft').fill('20');
@@ -367,20 +334,11 @@ test.describe('Assessment Wizard Flow', () => {
 
     // Complete assessment flow
     const fileInput = page.locator('#file-input');
-    const pngBuffer = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
     await fileInput.setInputFiles({
       name: 'test-image.png',
       mimeType: 'image/png',
       buffer: pngBuffer,
     });
-    await page.getByRole('button', { name: 'Continue to Details' }).click();
 
     // Fill mandatory dimensions
     await page.locator('#length-ft').fill('20');
@@ -410,20 +368,11 @@ test.describe('Assessment Wizard Flow', () => {
 
     // Complete assessment flow
     const fileInput = page.locator('#file-input');
-    const pngBuffer = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
     await fileInput.setInputFiles({
       name: 'test-image.png',
       mimeType: 'image/png',
       buffer: pngBuffer,
     });
-    await page.getByRole('button', { name: 'Continue to Details' }).click();
 
     // Fill mandatory dimensions
     await page.locator('#length-ft').fill('20');

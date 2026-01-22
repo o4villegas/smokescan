@@ -49,9 +49,21 @@ type MetadataFormProps = {
   isLoading: boolean;
   initialRoomType?: RoomType;
   initialData?: AssessmentMetadata | null;
+  embedded?: boolean; // When true, renders without Card wrapper (for combined layout)
+  imagesCount?: number; // Number of images uploaded (for validation in embedded mode)
+  isLoadingAssessment?: boolean; // When true, disables submit (waiting for assessment data)
 };
 
-export function MetadataForm({ onSubmit, onBack, isLoading, initialRoomType, initialData }: MetadataFormProps) {
+export function MetadataForm({
+  onSubmit,
+  onBack,
+  isLoading,
+  initialRoomType,
+  initialData,
+  embedded = false,
+  imagesCount = 0,
+  isLoadingAssessment = false,
+}: MetadataFormProps) {
   // Basic metadata - prefer initialData over initialRoomType
   const [roomType, setRoomType] = useState<RoomType>(
     initialData?.roomType ?? initialRoomType ?? 'residential-living'
@@ -115,6 +127,18 @@ export function MetadataForm({ onSubmit, onBack, isLoading, initialRoomType, ini
     return length > 0 && width > 0 && height > 0;
   }, [lengthFt, widthFt, heightFt]);
 
+  // Combined validation for submit button
+  const canSubmit = useMemo(() => {
+    if (isLoading || isLoadingAssessment || !dimensionsValid) {
+      return false;
+    }
+    // In embedded mode, also require at least 1 image
+    if (embedded && imagesCount === 0) {
+      return false;
+    }
+    return true;
+  }, [isLoading, isLoadingAssessment, dimensionsValid, embedded, imagesCount]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -154,17 +178,10 @@ export function MetadataForm({ onSubmit, onBack, isLoading, initialRoomType, ini
     });
   };
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Property Details</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Provide information about the property for FDAM assessment.
-        </p>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Row 1: Room Type & Structure Type */}
+  // Form content (shared between embedded and standalone modes)
+  const formContent = (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Row 1: Room Type & Structure Type */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="room-type">Room Type *</Label>
@@ -401,30 +418,52 @@ export function MetadataForm({ onSubmit, onBack, isLoading, initialRoomType, ini
             />
           </div>
 
-          {/* Actions */}
-          <div className="flex justify-between pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onBack}
-              disabled={isLoading}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
-            <Button type="submit" disabled={isLoading || !dimensionsValid}>
-              {isLoading ? (
-                'Analyzing...'
-              ) : (
-                <>
-                  <Play className="mr-2 h-4 w-4" />
-                  Start Assessment
-                </>
-              )}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      {/* Actions */}
+      <div className={embedded ? 'flex justify-end pt-4' : 'flex justify-between pt-4'}>
+        {!embedded && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onBack}
+            disabled={isLoading}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Button>
+        )}
+        <Button type="submit" disabled={!canSubmit}>
+          {isLoading ? (
+            'Analyzing...'
+          ) : isLoadingAssessment ? (
+            'Loading...'
+          ) : (
+            <>
+              <Play className="mr-2 h-4 w-4" />
+              Start Assessment
+            </>
+          )}
+        </Button>
+      </div>
+    </form>
   );
+
+  // Standalone mode: wrap in Card
+  if (!embedded) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">Property Details</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Provide information about the property for FDAM assessment.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {formContent}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Embedded mode: return form directly
+  return formContent;
 }
