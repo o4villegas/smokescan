@@ -110,7 +110,7 @@ export function ImageUpload({
         <input
           type="file"
           id="file-input"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           multiple
           onChange={(e) => handleFiles(e.target.files)}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
@@ -125,6 +125,9 @@ export function ImageUpload({
             </p>
             <p className="text-sm text-muted-foreground mt-1">
               {images.length} of {maxImages} images selected
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              JPEG, PNG, WebP, HEIC • Max 20MB per file
             </p>
           </div>
         </div>
