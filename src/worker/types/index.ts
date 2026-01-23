@@ -235,7 +235,6 @@ export type ChatResponse = {
 export type WorkerEnv = {
   RUNPOD_API_KEY: string;
   RUNPOD_ANALYSIS_ENDPOINT_ID: string;   // Vision reasoning (~40GB)
-  R2_PUBLIC_URL_BASE?: string;           // Optional: public R2 URL for URL-based image loading
   // Cloudflare bindings
   SMOKESCAN_SESSIONS: KVNamespace;
   SMOKESCAN_DB: D1Database;

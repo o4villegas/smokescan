@@ -33,27 +33,6 @@ function stripThinkBlocks(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
-/**
- * Check if a string is a URL (for URL-based image loading)
- */
-function isUrl(str: string): boolean {
-  return str.startsWith('http://') || str.startsWith('https://');
-}
-
-/**
- * Format image for RunPod message content.
- * Accepts either a URL or base64 data.
- * Qwen3-VL processor handles URL fetching automatically.
- */
-function formatImageForContent(image: string): string {
-  if (isUrl(image)) {
-    // URL - processor will fetch directly
-    return image;
-  }
-  // Base64 - ensure data URI format
-  return image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
-}
-
 export class RunPodService {
   private config: RunPodConfig;
 
@@ -132,9 +111,10 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
     ];
 
     for (const image of images) {
+      const imageUrl = image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
       content.push({
         type: 'image',
-        image: formatImageForContent(image),
+        image: imageUrl,
       });
     }
 
@@ -146,8 +126,7 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
     };
 
     try {
-      const imageType = images.length > 0 && isUrl(images[0]) ? 'URLs' : 'base64';
-      console.log(`[RunPod] Submitting job with ${images.length} images (${imageType})`);
+      console.log(`[RunPod] Submitting job with ${images.length} images`);
       const submitResponse = await fetch(`${endpointUrl}/run`, {
         method: 'POST',
         headers: {
@@ -304,9 +283,10 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
     ];
 
     for (const image of images) {
+      const imageUrl = image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`;
       content.push({
         type: 'image',
-        image: formatImageForContent(image),
+        image: imageUrl,
       });
     }
 
@@ -373,7 +353,7 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
         ];
 
         for (const image of images) {
-          content.push({ type: 'image', image: formatImageForContent(image) });
+          content.push({ type: 'image', image });
         }
 
         messagesWithImages = [

@@ -56,33 +56,18 @@ export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
   const session = sessionResult.data;
 
   // Initialize storage service for R2 access
-  const storage = new StorageService(
-    c.env.SMOKESCAN_IMAGES,
-    c.env.SMOKESCAN_REPORTS,
-    c.env.R2_PUBLIC_URL_BASE
-  );
+  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
 
-  // Load existing images - prefer public URLs (avoids 10MB limit), fall back to base64
+  // Load existing images from R2 as base64 data URIs
   console.log(`[Chat] Loading ${session.imageR2Keys.length} existing images from R2`);
   const existingImages: string[] = [];
-  if (storage.hasPublicAccess()) {
-    // Use public URLs - no need to fetch from R2
-    for (const key of session.imageR2Keys) {
-      const url = storage.getPublicUrl(key);
-      if (url) existingImages.push(url);
+  for (const key of session.imageR2Keys) {
+    const imageResult = await storage.getSignedUrl(key);
+    if (imageResult.success) {
+      existingImages.push(imageResult.data);
+    } else {
+      console.warn(`[Chat] Failed to load image ${key}:`, imageResult.error);
     }
-    console.log(`[Chat] Using ${existingImages.length} R2 public URLs`);
-  } else {
-    // Fall back to base64 data URIs
-    for (const key of session.imageR2Keys) {
-      const imageResult = await storage.getSignedUrl(key);
-      if (imageResult.success) {
-        existingImages.push(imageResult.data);
-      } else {
-        console.warn(`[Chat] Failed to load image ${key}:`, imageResult.error);
-      }
-    }
-    console.log(`[Chat] Loaded ${existingImages.length} images as base64`);
   }
 
   // Save new images to R2 if provided

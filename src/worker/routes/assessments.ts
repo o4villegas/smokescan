@@ -152,7 +152,7 @@ app.patch('/:id', async (c) => {
 app.delete('/:id', async (c) => {
   const { id } = c.req.param();
   const db = new DatabaseService(c.env.SMOKESCAN_DB);
-  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS, c.env.R2_PUBLIC_URL_BASE);
+  const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
 
   // Delete files from R2 first
   await storage.deleteAllByAssessment(id);

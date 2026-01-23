@@ -30,12 +30,6 @@ fi
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 echo "Multiprocess method: spawn"
 
-# CUDA memory optimization - prevents fragmentation OOM on variable workloads
-# expandable_segments: Allows PyTorch to expand memory segments instead of fragmenting
-# garbage_collection_threshold: Triggers GC when 80% of reserved memory is used
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8
-echo "CUDA memory config: expandable_segments + GC threshold 0.8"
-
 # Run handler directly (model loads at startup via load_model())
 echo "Starting handler..."
 exec python -u /app/handler.py
