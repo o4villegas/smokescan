@@ -51,7 +51,6 @@ export class RunPodService {
     images: string[],
     metadata: AssessmentMetadata
   ): Promise<Result<string, ApiError>> {
-    console.log(`[RunPod] Calling Qwen-Agent endpoint with ${images.length} images`);
     return this.callAnalysisEndpoint(images, metadata);
   }
 
@@ -68,7 +67,6 @@ export class RunPodService {
     sessionContext: string,
     images: string[] = []
   ): Promise<Result<string, ApiError>> {
-    console.log(`[RunPod] Calling Qwen-Agent endpoint for chat with ${images.length} images`);
     return this.callAnalysisEndpointChat(conversationHistory, sessionContext, images);
   }
 
@@ -126,7 +124,6 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
     };
 
     try {
-      console.log(`[RunPod] Submitting job with ${images.length} images`);
       const submitResponse = await fetch(`${endpointUrl}/run`, {
         method: 'POST',
         headers: {
@@ -149,7 +146,6 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
       }
 
       const submitResult = (await submitResponse.json()) as RunPodResponse;
-      console.log(`[RunPod] Job submitted with ID: ${submitResult.id}, status: ${submitResult.status}`);
 
       // Return the job ID immediately (don't wait for completion)
       return { success: true, data: submitResult.id };

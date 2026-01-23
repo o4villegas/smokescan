@@ -56,7 +56,6 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
   const sessionId = sessionService.generateSessionId();
 
   // Save images to R2 for later use in chat (in parallel)
-  console.log(`[Assess] Saving ${images.length} images to R2`);
   const imageR2Keys: string[] = [];
   const uploadPromises = images.map(async (base64Image, index) => {
     // Extract content type from data URI or default to jpeg
@@ -96,10 +95,8 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
   for (const key of uploadedKeys) {
     if (key) imageR2Keys.push(key);
   }
-  console.log(`[Assess] Saved ${imageR2Keys.length}/${images.length} images to R2`);
 
   // Call Qwen-Agent endpoint (handles RAG internally via fdam_rag tool)
-  console.log(`[Assess] Sending ${images.length} images to Qwen-Agent`);
   const assessResult = await runpod.assess(images, metadata);
   if (!assessResult.success) {
     return c.json(
@@ -193,7 +190,6 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
   const sessionId = sessionService.generateSessionId();
 
   // Save images to R2 (in parallel) - fail entire assessment if any upload fails
-  console.log(`[AssessSubmit] Saving ${images.length} images to R2`);
   let imageR2Keys: string[];
   try {
     imageR2Keys = await Promise.all(
@@ -241,10 +237,8 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
       500
     );
   }
-  console.log(`[AssessSubmit] Saved ${imageR2Keys.length}/${images.length} images to R2`);
 
   // Submit job to RunPod (non-blocking)
-  console.log(`[AssessSubmit] Submitting job to RunPod`);
   const submitResult = await runpod.submitJob(images, metadata);
   if (!submitResult.success) {
     return c.json(
@@ -273,8 +267,6 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
     JSON.stringify(jobState),
     { expirationTtl: JOB_TTL }
   );
-
-  console.log(`[AssessSubmit] Job ${jobId} submitted, RunPod ID: ${runpodJobId}`);
 
   return c.json({
     success: true,

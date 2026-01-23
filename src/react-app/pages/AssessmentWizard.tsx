@@ -159,7 +159,6 @@ export function AssessmentWizard() {
         }
 
         const { jobId } = submitResult.data;
-        console.log(`[Wizard] Job submitted: ${jobId}`);
 
         // Reset consecutive failures counter
         consecutiveFailuresRef.current = 0;
@@ -207,7 +206,6 @@ export function AssessmentWizard() {
             consecutiveFailuresRef.current = 0;
 
             const { status, error } = statusResult.data;
-            console.log(`[Wizard] Job ${jobId} status: ${status}`);
 
             if (status === 'completed') {
               // Stop polling

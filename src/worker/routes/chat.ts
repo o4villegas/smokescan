@@ -59,7 +59,6 @@ export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
   const storage = new StorageService(c.env.SMOKESCAN_IMAGES, c.env.SMOKESCAN_REPORTS);
 
   // Load existing images from R2 as base64 data URIs
-  console.log(`[Chat] Loading ${session.imageR2Keys.length} existing images from R2`);
   const existingImages: string[] = [];
   for (const key of session.imageR2Keys) {
     const imageResult = await storage.getSignedUrl(key);
@@ -73,7 +72,6 @@ export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
   // Save new images to R2 if provided
   const newImageKeys: string[] = [];
   if (newImages && newImages.length > 0) {
-    console.log(`[Chat] Saving ${newImages.length} new images to R2`);
     for (let i = 0; i < newImages.length; i++) {
       const base64Image = newImages[i];
 
@@ -118,11 +116,8 @@ export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
     // Update session with new image keys
     if (newImageKeys.length > 0) {
       session.imageR2Keys.push(...newImageKeys);
-      console.log(`[Chat] Updated session with ${newImageKeys.length} new image keys`);
     }
   }
-
-  console.log(`[Chat] Total images for model: ${existingImages.length}`);
 
   // Build session context for the analysis endpoint
   const sessionContext = `

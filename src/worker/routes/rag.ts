@@ -42,8 +42,6 @@ export async function handleRagQuery(c: Context<{ Bindings: WorkerEnv }>) {
 
   const { query, maxChunks } = parsed.data;
 
-  console.log(`[RAG Query] Received query: "${query.slice(0, 100)}..."`);
-
   // Query Cloudflare AI Search
   const ragService = new RAGService({ ai: c.env.AI });
   const result = await ragService.retrieve([query], maxChunks);
@@ -56,8 +54,6 @@ export async function handleRagQuery(c: Context<{ Bindings: WorkerEnv }>) {
   // Format context for the LLM
   const context = ragService.formatContext(result.data);
   const processingTimeMs = Date.now() - startTime;
-
-  console.log(`[RAG Query] Retrieved ${result.data.length} chunks in ${processingTimeMs}ms`);
 
   return c.json({
     success: true,
