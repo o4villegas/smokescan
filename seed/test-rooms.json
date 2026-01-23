@@ -62,7 +62,7 @@
     },
     {
       "room_name": "Dining Room",
-      "room_type": "residential-living",
+      "room_type": "residential-kitchen",
       "structure_type": "single-family",
       "floor_level": "1st",
       "dimensions": {
@@ -73,8 +73,9 @@
         "volume_cf": 2240
       },
       "sensory_observations": {
-        "smoke_odor_present": false,
-        "white_wipe_result": "clean"
+        "smoke_odor_present": true,
+        "smoke_odor_intensity": "strong",
+        "white_wipe_result": "heavy-deposits"
       }
     },
     {
