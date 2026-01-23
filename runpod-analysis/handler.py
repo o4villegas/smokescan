@@ -36,6 +36,33 @@ def load_model():
     """Load model at startup (not per-request)"""
     global model, processor
 
+    # ========== GPU VALIDATION (FAIL-FAST) ==========
+    # Prevents silent CPU fallback that causes flash_attention errors
+    print("[Handler] Checking GPU availability...")
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA not available! This endpoint requires GPU. "
+            "torch.cuda.is_available() returned False. "
+            "Worker will restart and retry with different GPU allocation."
+        )
+
+    device_count = torch.cuda.device_count()
+    if device_count == 0:
+        raise RuntimeError(
+            "No CUDA devices found! torch.cuda.device_count() = 0. "
+            "GPU may not be properly initialized. "
+            "Worker will restart and retry."
+        )
+
+    # Log GPU info for debugging
+    print(f"[Handler] CUDA available: {device_count} GPU(s) detected")
+    for i in range(device_count):
+        name = torch.cuda.get_device_name(i)
+        mem_gb = torch.cuda.get_device_properties(i).total_memory / (1024**3)
+        print(f"[Handler] GPU {i}: {name}, {mem_gb:.1f} GB VRAM")
+    # ================================================
+
     from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 
     print(f"[Handler] Loading {MODEL_ID}...")
@@ -47,6 +74,9 @@ def load_model():
         attn_implementation="flash_attention_2",
         device_map="auto"
     ).eval()
+
+    # Verify model is on GPU
+    print(f"[Handler] Model device: {model.device}")
     print("[Handler] Model loaded successfully")
 
 
