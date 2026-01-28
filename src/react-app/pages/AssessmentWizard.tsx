@@ -6,7 +6,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ImageUpload, MetadataForm, ProcessingView, AssessmentReport, ChatInterface } from '../components';
-import { submitAssessmentJob, getJobStatus, getJobResult, sendChatMessage } from '../lib/api';
+import { submitAssessmentJob, getJobStatus, getJobResult, sendChatMessage, triggerWarmup } from '../lib/api';
 import type { AssessmentMetadata, AssessmentReport as ReportType, ChatMessage, RoomType, StructureType } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -68,6 +68,11 @@ export function AssessmentWizard() {
     if (elapsed < 120000) return 10000; // 30s-2min: every 10s (cold start territory)
     return 15000;                        // 2min+: every 15s (extended wait)
   }
+
+  // Pre-warm RunPod worker while user prepares assessment
+  useEffect(() => {
+    triggerWarmup();
+  }, []);
 
   // Cleanup polling on unmount
   useEffect(() => {

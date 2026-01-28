@@ -118,6 +118,17 @@ export async function sendChatMessage(
   }
 }
 
+/**
+ * Pre-warm RunPod worker (fire-and-forget, best-effort)
+ */
+export async function triggerWarmup(): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/assess/warmup`, { method: 'POST' });
+  } catch {
+    // Silent failure - warmup is best-effort
+  }
+}
+
 // ============ Polling-based Assessment API ============
 
 type JobSubmitResponse = {

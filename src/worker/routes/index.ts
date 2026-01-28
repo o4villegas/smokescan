@@ -3,7 +3,7 @@
  * Re-exports all route handlers
  */
 
-export { handleAssess, handleAssessSubmit, handleAssessStatus, handleAssessResult } from './assess';
+export { handleAssess, handleAssessSubmit, handleAssessStatus, handleAssessResult, handleAssessWarmup } from './assess';
 export { handleChat } from './chat';
 export { handleHealth, handleRagTest } from './health';
 export { handleRagQuery } from './rag';

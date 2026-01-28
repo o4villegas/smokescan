@@ -464,6 +464,25 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
 }
 
 /**
+ * POST /api/assess/warmup
+ * Fire-and-forget warmup to trigger RunPod worker allocation.
+ */
+export async function handleAssessWarmup(c: Context<{ Bindings: WorkerEnv }>) {
+  const runpod = new RunPodService({
+    apiKey: c.env.RUNPOD_API_KEY,
+    analysisEndpointId: c.env.RUNPOD_ANALYSIS_ENDPOINT_ID,
+  });
+
+  const result = await runpod.warmupWorker();
+
+  if (!result.success) {
+    return c.json({ success: false, error: result.error }, 500);
+  }
+
+  return c.json({ success: true, data: { status: 'warming' } });
+}
+
+/**
  * Extract basic vision summary from report for session state.
  * Used to provide context in follow-up chat sessions.
  */

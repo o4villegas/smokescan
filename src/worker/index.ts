@@ -11,6 +11,7 @@ import {
   handleAssessSubmit,
   handleAssessStatus,
   handleAssessResult,
+  handleAssessWarmup,
   handleChat,
   handleHealth,
   handleRagTest,
@@ -86,6 +87,7 @@ app.post('/api/assess', handleAssess);
 app.post('/api/assess/submit', handleAssessSubmit);
 app.get('/api/assess/status/:jobId', handleAssessStatus);
 app.get('/api/assess/result/:jobId', handleAssessResult);
+app.post('/api/assess/warmup', handleAssessWarmup);
 
 // Chat endpoint
 app.post('/api/chat', handleChat);
@@ -102,6 +104,7 @@ app.get('/api/', (c) => c.json({
     assessSubmit: '/api/assess/submit',
     assessStatus: '/api/assess/status/:jobId',
     assessResult: '/api/assess/result/:jobId',
+    assessWarmup: '/api/assess/warmup',
     chat: '/api/chat',
     health: '/api/health',
     ragQuery: '/api/rag/query',

@@ -162,6 +162,54 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
   }
 
   /**
+   * Fire-and-forget warmup to trigger RunPod worker allocation.
+   * Sends a minimal text-only request to wake up a cold worker.
+   */
+  async warmupWorker(): Promise<Result<string, ApiError>> {
+    const endpointUrl = `https://api.runpod.ai/v2/${this.config.analysisEndpointId}`;
+
+    try {
+      const response = await fetch(`${endpointUrl}/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({
+          input: {
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'warmup' }] }],
+            max_tokens: 10,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: {
+            code: response.status as ApiErrorCode,
+            message: 'Warmup failed',
+            details: errorText,
+          },
+        };
+      }
+
+      const data = (await response.json()) as RunPodResponse;
+      return { success: true, data: data.id };
+    } catch (e) {
+      return {
+        success: false,
+        error: {
+          code: 500,
+          message: 'Warmup error',
+          details: String(e),
+        },
+      };
+    }
+  }
+
+  /**
    * Check the status of a RunPod job without blocking.
    */
   async getJobStatus(runpodJobId: string): Promise<Result<RunPodResponse, ApiError>> {
