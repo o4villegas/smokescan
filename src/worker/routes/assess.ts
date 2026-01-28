@@ -565,20 +565,72 @@ function parseReport(reportText: string): AssessmentReport {
     return 'moderate'; // Default
   }
 
-  // Helper to extract bullet points from section
-  function extractBulletPoints(text: string): string[] {
+  // Helper to extract data rows from markdown tables
+  function extractTableRows(text: string): string[][] {
     const lines = text.split('\n');
-    const bullets: string[] = [];
+    const rows: string[][] = [];
+    let pastSeparator = false;
 
     for (const line of lines) {
-      // Match lines starting with -, *, •, or numbered items
-      const match = line.match(/^\s*[-•*]\s*(.+)$/) || line.match(/^\s*\d+\.\s*(.+)$/);
-      if (match && match[1].trim()) {
-        bullets.push(match[1].trim());
+      const trimmed = line.trim();
+      if (/^\|[\s\-:|]+\|$/.test(trimmed)) {
+        pastSeparator = true;
+        continue;
+      }
+      if (/^\|.+\|$/.test(trimmed)) {
+        if (!pastSeparator) continue; // skip header row
+        const cells = trimmed
+          .slice(1, -1)
+          .split('|')
+          .map(c => c.replace(/\*\*/g, '').trim())
+          .filter(c => c.length > 0);
+        if (cells.length > 0) rows.push(cells);
+      }
+    }
+    return rows;
+  }
+
+  // Helper to extract bullet points and table rows from section
+  function extractBulletPoints(text: string): string[] {
+    const lines = text.split('\n');
+    const items: string[] = [];
+    let pastSeparator = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // Bullet points (existing logic)
+      const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/) || trimmed.match(/^\d+\.\s+(.+)$/);
+      if (bulletMatch && bulletMatch[1].trim()) {
+        items.push(bulletMatch[1].trim());
+        continue;
+      }
+
+      // Table separator → next rows are data
+      if (/^\|[\s\-:|]+\|$/.test(trimmed)) {
+        pastSeparator = true;
+        continue;
+      }
+
+      // Table data rows (after separator, skip header)
+      if (/^\|.+\|$/.test(trimmed)) {
+        if (!pastSeparator) continue;
+        const cells = trimmed
+          .slice(1, -1)
+          .split('|')
+          .map(c => c.replace(/\*\*/g, '').trim())
+          .filter(c => c.length > 0);
+        if (cells.length > 0) {
+          items.push(cells.join(' - '));
+        }
       }
     }
 
-    return bullets.length > 0 ? bullets : text.split(/[.!?]+/).filter(s => s.trim().length > 10).slice(0, 5);
+    // Safe fallback: return trimmed text as single item (NO period splitting)
+    if (items.length === 0 && text.trim().length > 10) {
+      return [text.trim().slice(0, 200)];
+    }
+    return items;
   }
 
   // 1. Extract Executive Summary
@@ -616,27 +668,43 @@ function parseReport(reportText: string): AssessmentReport {
   // 4. Extract Disposition → restorationPriority
   const dispositionContent = extractSection('Disposition');
   if (dispositionContent) {
-    const bullets = extractBulletPoints(dispositionContent);
-    let priority = 1;
+    const tableRows = extractTableRows(dispositionContent);
 
-    for (const bullet of bullets.slice(0, 10)) {
-      // Try to determine action type from content
-      let action = 'Assess';
-      const lowerBullet = bullet.toLowerCase();
-      if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) {
-        action = 'Remove';
-      } else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(lowerBullet)) {
-        action = 'Clean';
-      } else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) {
-        action = 'No Action';
+    if (tableRows.length > 0) {
+      // Table format: first cell = surface, remaining cells = method/rationale
+      let priority = 1;
+      for (const cells of tableRows.slice(0, 10)) {
+        const fullText = cells.join(' ').toLowerCase();
+        let action = 'Assess';
+        if (/\bremove\b|\breplace\b|\bdiscard\b/.test(fullText)) action = 'Remove';
+        else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(fullText)) action = 'Clean';
+        else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(fullText)) action = 'No Action';
+
+        sections.restorationPriority.push({
+          priority: priority++,
+          area: cells[0].slice(0, 50) || `Item ${priority - 1}`,
+          action,
+          rationale: cells.slice(1).join('; '),
+        });
       }
+    } else {
+      // Bullet format
+      const bullets = extractBulletPoints(dispositionContent);
+      let priority = 1;
+      for (const bullet of bullets.slice(0, 10)) {
+        let action = 'Assess';
+        const lowerBullet = bullet.toLowerCase();
+        if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) action = 'Remove';
+        else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(lowerBullet)) action = 'Clean';
+        else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) action = 'No Action';
 
-      sections.restorationPriority.push({
-        priority: priority++,
-        area: bullet.split(/[,.:]/)[0].slice(0, 50) || `Item ${priority - 1}`,
-        action,
-        rationale: bullet,
-      });
+        sections.restorationPriority.push({
+          priority: priority++,
+          area: bullet.split(/[,.:]/)[0].slice(0, 50) || `Item ${priority - 1}`,
+          action,
+          rationale: bullet,
+        });
+      }
     }
   }
 

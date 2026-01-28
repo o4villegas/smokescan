@@ -150,18 +150,66 @@ function parseReport(reportText: string): AssessmentReport {
     return 'moderate';
   }
 
-  function extractBulletPoints(text: string): string[] {
+  function extractTableRows(text: string): string[][] {
     const lines = text.split('\n');
-    const bullets: string[] = [];
+    const rows: string[][] = [];
+    let pastSeparator = false;
 
     for (const line of lines) {
-      const match = line.match(/^\s*[-•*]\s*(.+)$/) || line.match(/^\s*\d+\.\s*(.+)$/);
-      if (match && match[1].trim()) {
-        bullets.push(match[1].trim());
+      const trimmed = line.trim();
+      if (/^\|[\s\-:|]+\|$/.test(trimmed)) {
+        pastSeparator = true;
+        continue;
+      }
+      if (/^\|.+\|$/.test(trimmed)) {
+        if (!pastSeparator) continue;
+        const cells = trimmed
+          .slice(1, -1)
+          .split('|')
+          .map(c => c.replace(/\*\*/g, '').trim())
+          .filter(c => c.length > 0);
+        if (cells.length > 0) rows.push(cells);
+      }
+    }
+    return rows;
+  }
+
+  function extractBulletPoints(text: string): string[] {
+    const lines = text.split('\n');
+    const items: string[] = [];
+    let pastSeparator = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/) || trimmed.match(/^\d+\.\s+(.+)$/);
+      if (bulletMatch && bulletMatch[1].trim()) {
+        items.push(bulletMatch[1].trim());
+        continue;
+      }
+
+      if (/^\|[\s\-:|]+\|$/.test(trimmed)) {
+        pastSeparator = true;
+        continue;
+      }
+
+      if (/^\|.+\|$/.test(trimmed)) {
+        if (!pastSeparator) continue;
+        const cells = trimmed
+          .slice(1, -1)
+          .split('|')
+          .map(c => c.replace(/\*\*/g, '').trim())
+          .filter(c => c.length > 0);
+        if (cells.length > 0) {
+          items.push(cells.join(' - '));
+        }
       }
     }
 
-    return bullets.length > 0 ? bullets : text.split(/[.!?]+/).filter(s => s.trim().length > 10).slice(0, 5);
+    if (items.length === 0 && text.trim().length > 10) {
+      return [text.trim().slice(0, 200)];
+    }
+    return items;
   }
 
   // 1. Extract Executive Summary
@@ -198,26 +246,41 @@ function parseReport(reportText: string): AssessmentReport {
   // 4. Extract Disposition → restorationPriority
   const dispositionContent = extractSection('Disposition');
   if (dispositionContent) {
-    const bullets = extractBulletPoints(dispositionContent);
-    let priority = 1;
+    const tableRows = extractTableRows(dispositionContent);
 
-    for (const bullet of bullets.slice(0, 10)) {
-      let action = 'Assess';
-      const lowerBullet = bullet.toLowerCase();
-      if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) {
-        action = 'Remove';
-      } else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(lowerBullet)) {
-        action = 'Clean';
-      } else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) {
-        action = 'No Action';
+    if (tableRows.length > 0) {
+      let priority = 1;
+      for (const cells of tableRows.slice(0, 10)) {
+        const fullText = cells.join(' ').toLowerCase();
+        let action = 'Assess';
+        if (/\bremove\b|\breplace\b|\bdiscard\b/.test(fullText)) action = 'Remove';
+        else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(fullText)) action = 'Clean';
+        else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(fullText)) action = 'No Action';
+
+        sections.restorationPriority.push({
+          priority: priority++,
+          area: cells[0].slice(0, 50) || `Item ${priority - 1}`,
+          action,
+          rationale: cells.slice(1).join('; '),
+        });
       }
+    } else {
+      const bullets = extractBulletPoints(dispositionContent);
+      let priority = 1;
+      for (const bullet of bullets.slice(0, 10)) {
+        let action = 'Assess';
+        const lowerBullet = bullet.toLowerCase();
+        if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) action = 'Remove';
+        else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(lowerBullet)) action = 'Clean';
+        else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) action = 'No Action';
 
-      sections.restorationPriority.push({
-        priority: priority++,
-        area: bullet.split(/[,.:]/)[0].slice(0, 50) || `Item ${priority - 1}`,
-        action,
-        rationale: bullet,
-      });
+        sections.restorationPriority.push({
+          priority: priority++,
+          area: bullet.split(/[,.:]/)[0].slice(0, 50) || `Item ${priority - 1}`,
+          action,
+          rationale: bullet,
+        });
+      }
     }
   }
 
@@ -426,6 +489,83 @@ describe('parseReport()', () => {
 
       expect(result.restorationPriority[0].action).toBe('Assess');
     });
+  });
+});
+
+describe('Markdown table parsing', () => {
+  it('should parse table-formatted disposition into restorationPriority', () => {
+    const testOutput = `## 4. Disposition
+
+| Surface | Action | Method |
+|---------|--------|--------|
+| Ceiling deck (metal) | Clean | HEPA vacuum then TSP |
+| Acoustic tiles | Remove | Discard due to contamination |
+| Concrete floor | No action | Retain as-is |`;
+
+    const result = parseReport(testOutput);
+
+    expect(result.restorationPriority.length).toBe(3);
+    expect(result.restorationPriority[0].area).toBe('Ceiling deck (metal)');
+    expect(result.restorationPriority[0].action).toBe('Clean');
+    expect(result.restorationPriority[1].action).toBe('Remove');
+    expect(result.restorationPriority[2].action).toBe('No Action');
+  });
+
+  it('should parse table-formatted sampling into recommendations', () => {
+    const testOutput = `## 5. Sampling Recommendations
+
+| Sample Type | Density | Location |
+|-------------|---------|----------|
+| Tape lift | 3 per 1,000 SF | Ceiling surfaces |
+| Wipe sample | 2 per room | Vertical surfaces |`;
+
+    const result = parseReport(testOutput);
+
+    expect(result.fdamRecommendations.length).toBe(2);
+    expect(result.fdamRecommendations[0]).toContain('Tape lift');
+    expect(result.fdamRecommendations[1]).toContain('Wipe sample');
+  });
+
+  it('should not fragment FDAM references with periods', () => {
+    const testOutput = `## 5. Sampling Recommendations
+
+According to FDAM v4.1 (Section 2.3 Phase 2: PRA), sampling should reflect zone heterogeneity.`;
+
+    const result = parseReport(testOutput);
+
+    // Should be a single item, not fragmented on periods
+    expect(result.fdamRecommendations.length).toBe(1);
+    expect(result.fdamRecommendations[0]).toContain('FDAM v4.1');
+  });
+
+  it('should handle mixed bullets and tables in same section', () => {
+    const testOutput = `## 3. Surface Assessment
+
+- Steel beams: Light soot deposits
+
+| Surface | Condition |
+|---------|-----------|
+| Ceiling | Heavy soot |
+| Floor | Moderate debris |`;
+
+    const result = parseReport(testOutput);
+
+    const surfaceSection = result.detailedAssessment.find(d => d.area === 'Surface Assessment');
+    expect(surfaceSection).toBeDefined();
+    // Should have bullet + 2 table rows = 3 recommendations
+    expect(surfaceSection!.recommendations.length).toBe(3);
+  });
+
+  it('should strip bold markdown from table cells', () => {
+    const testOutput = `## 4. Disposition
+
+| Surface | Action |
+|---------|--------|
+| **Burn Zone** | Remove all materials |`;
+
+    const result = parseReport(testOutput);
+
+    expect(result.restorationPriority[0].area).toBe('Burn Zone');
   });
 });
 
