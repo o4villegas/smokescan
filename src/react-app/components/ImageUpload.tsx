@@ -1,22 +1,33 @@
 /**
  * ImageUpload Component
  * Drag-and-drop or click-to-upload interface for damage photos
+ * Includes client-side image compression (max 2048px, JPEG 85%)
  */
 
 import { useCallback, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Upload, X, Image as ImageIcon } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  compressImage,
+  formatBytes,
+  type CompressionResult,
+} from '@/lib/imageCompression';
 
 type ImageUploadProps = {
   images: File[];
   previewUrls: string[];
-  onImagesChange: (images: File[], previewUrls: string[]) => void;
+  onImagesChange: (
+    images: File[],
+    previewUrls: string[],
+    compressedDataUrls?: string[]
+  ) => void;
   onNext: () => void;
   maxImages?: number;
   isLoadingMetadata?: boolean; // When true, disables Next button (waiting for metadata pre-fill)
   embedded?: boolean; // When true, renders without Card wrapper (for combined layout)
+  compressedDataUrls?: string[]; // Compressed image data URLs for API submission
 };
 
 export function ImageUpload({
@@ -27,30 +38,85 @@ export function ImageUpload({
   maxImages = 10,
   isLoadingMetadata = false,
   embedded = false,
+  compressedDataUrls = [],
 }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressionStats, setCompressionStats] = useState<{
+    totalOriginal: number;
+    totalCompressed: number;
+  } | null>(null);
 
   const handleFiles = useCallback(
-    (files: FileList | null) => {
+    async (files: FileList | null) => {
       if (!files) return;
 
+      // Filter valid image files
       const validFiles: File[] = [];
-      const validUrls: string[] = [];
-
       Array.from(files).forEach((file) => {
         if (!file.type.startsWith('image/')) return;
         if (images.length + validFiles.length >= maxImages) return;
-
         validFiles.push(file);
-        validUrls.push(URL.createObjectURL(file));
       });
 
-      onImagesChange(
-        [...images, ...validFiles],
-        [...previewUrls, ...validUrls]
-      );
+      if (validFiles.length === 0) return;
+
+      setIsCompressing(true);
+
+      try {
+        // Compress images in parallel
+        const compressionResults: CompressionResult[] = await Promise.all(
+          validFiles.map((file) => compressImage(file))
+        );
+
+        // Extract preview URLs and compressed data URLs
+        const newPreviewUrls = compressionResults.map((r) => r.dataUrl);
+        const newCompressedUrls = compressionResults.map((r) => r.dataUrl);
+
+        // Update compression stats
+        const totalOriginal = compressionResults.reduce(
+          (sum, r) => sum + r.originalSize,
+          0
+        );
+        const totalCompressed = compressionResults.reduce(
+          (sum, r) => sum + r.compressedSize,
+          0
+        );
+
+        // Merge with existing stats
+        const existingOriginal = compressionStats?.totalOriginal ?? 0;
+        const existingCompressed = compressionStats?.totalCompressed ?? 0;
+
+        setCompressionStats({
+          totalOriginal: existingOriginal + totalOriginal,
+          totalCompressed: existingCompressed + totalCompressed,
+        });
+
+        // Log compression results
+        console.log(
+          `[ImageUpload] Compressed ${validFiles.length} images: ${formatBytes(totalOriginal)} -> ${formatBytes(totalCompressed)} (${(totalOriginal / totalCompressed).toFixed(1)}x reduction)`
+        );
+
+        onImagesChange(
+          [...images, ...validFiles],
+          [...previewUrls, ...newPreviewUrls],
+          [...compressedDataUrls, ...newCompressedUrls]
+        );
+      } catch (error) {
+        console.error('[ImageUpload] Compression failed:', error);
+        // Fall back to uncompressed URLs if compression fails
+        const fallbackUrls = validFiles.map((file) =>
+          URL.createObjectURL(file)
+        );
+        onImagesChange(
+          [...images, ...validFiles],
+          [...previewUrls, ...fallbackUrls]
+        );
+      } finally {
+        setIsCompressing(false);
+      }
     },
-    [images, previewUrls, onImagesChange, maxImages]
+    [images, previewUrls, compressedDataUrls, onImagesChange, maxImages, compressionStats]
   );
 
   const handleDrop = useCallback(
@@ -76,11 +142,11 @@ export function ImageUpload({
     (index: number) => {
       const newImages = images.filter((_, i) => i !== index);
       const newUrls = previewUrls.filter((_, i) => i !== index);
-      // Revoke the old URL to free memory
-      URL.revokeObjectURL(previewUrls[index]);
-      onImagesChange(newImages, newUrls);
+      const newCompressedUrls = compressedDataUrls.filter((_, i) => i !== index);
+      // Note: Compressed URLs are data URLs, not object URLs, so no revocation needed
+      onImagesChange(newImages, newUrls, newCompressedUrls);
     },
-    [images, previewUrls, onImagesChange]
+    [images, previewUrls, compressedDataUrls, onImagesChange]
   );
 
   // Core content that's shared between embedded and standalone modes
@@ -117,17 +183,31 @@ export function ImageUpload({
         />
         <div className="flex flex-col items-center gap-2">
           <div className={cn('rounded-full bg-muted', embedded ? 'p-2' : 'p-4')}>
-            <Upload className={cn('text-muted-foreground', embedded ? 'h-5 w-5' : 'h-8 w-8')} />
+            {isCompressing ? (
+              <Loader2 className={cn('text-muted-foreground animate-spin', embedded ? 'h-5 w-5' : 'h-8 w-8')} />
+            ) : (
+              <Upload className={cn('text-muted-foreground', embedded ? 'h-5 w-5' : 'h-8 w-8')} />
+            )}
           </div>
           <div>
             <p className={cn('font-medium', embedded && 'text-sm')}>
-              {embedded ? 'Drop images or click to browse' : 'Drag & drop images here or click to browse'}
+              {isCompressing
+                ? 'Compressing images...'
+                : embedded
+                  ? 'Drop images or click to browse'
+                  : 'Drag & drop images here or click to browse'}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
               {images.length} of {maxImages} images selected
+              {compressionStats && (
+                <span className="text-green-600 dark:text-green-400">
+                  {' '}• {formatBytes(compressionStats.totalCompressed)} (
+                  {((1 - compressionStats.totalCompressed / compressionStats.totalOriginal) * 100).toFixed(0)}% smaller)
+                </span>
+              )}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              JPEG, PNG, WebP, HEIC • Max 20MB per file
+              JPEG, PNG, WebP, HEIC • Auto-compressed to ~300KB
             </p>
           </div>
         </div>

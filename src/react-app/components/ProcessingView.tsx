@@ -1,35 +1,66 @@
 /**
  * ProcessingView Component
- * Loading state while assessment is being processed
+ * Loading state while assessment is being processed.
+ * Supports status-driven step progression for cold start visibility.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Camera, BookOpen, FileText, Loader2, Check } from 'lucide-react';
+import { Zap, Camera, BookOpen, FileText, Loader2, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type ProcessingViewProps = {
   imageCount: number;
+  status?: 'pending' | 'in_progress';
 };
 
 const PROCESSING_STEPS = [
+  { icon: Zap, label: 'Connecting to AI analysis engine', key: 'init' },
   { icon: Camera, label: 'Analyzing images with AI vision model', key: 'vision' },
   { icon: BookOpen, label: 'Retrieving FDAM methodology context', key: 'rag' },
   { icon: FileText, label: 'Generating assessment report', key: 'report' },
 ];
 
-const STEP_DURATION_MS = 20000; // 20 seconds per step
+// Timer-based fallback duration for steps after status-driven ones
+const STEP_DURATION_MS = 20000;
 
-export function ProcessingView({ imageCount }: ProcessingViewProps) {
+export function ProcessingView({ imageCount, status }: ProcessingViewProps) {
   const [activeStep, setActiveStep] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const statusDrivenRef = useRef(false);
 
+  // Elapsed time counter
   useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Status-driven step progression
+  useEffect(() => {
+    if (status === 'in_progress') {
+      statusDrivenRef.current = true;
+      // Jump to at least step 1 (vision) when worker starts processing
+      setActiveStep((prev) => Math.max(prev, 1));
+    }
+  }, [status]);
+
+  // Timer-based fallback for steps after the status-driven ones
+  useEffect(() => {
+    // Only start timer-based progression once we're past the init step
+    if (activeStep < 1) return;
+
     const timer = setInterval(() => {
       setActiveStep((prev) => (prev < PROCESSING_STEPS.length - 1 ? prev + 1 : prev));
     }, STEP_DURATION_MS);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [activeStep >= 1]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  const elapsed = `${minutes}:${String(seconds).padStart(2, '0')}`;
 
   return (
     <Card>
@@ -95,9 +126,19 @@ export function ProcessingView({ imageCount }: ProcessingViewProps) {
           })}
         </div>
 
-        {/* Note */}
+        {/* Cold start message */}
+        {elapsedSeconds > 90 && status === 'pending' && (
+          <div className="mt-6 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg text-sm text-blue-800 dark:text-blue-200 max-w-md">
+            <p>First analyses may take 2-3 minutes as the AI model initializes. Subsequent analyses will be much faster.</p>
+          </div>
+        )}
+
+        {/* Elapsed time and note */}
         <p className="text-xs text-muted-foreground mt-8">
-          This may take 1-2 minutes for thorough analysis.
+          Elapsed: {elapsed}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          First analysis: 2-3 min. Subsequent: under 30 seconds.
         </p>
       </CardContent>
     </Card>

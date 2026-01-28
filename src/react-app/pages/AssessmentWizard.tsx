@@ -16,6 +16,7 @@ type WizardState = {
   step: WizardStep;
   images: File[];
   imagePreviewUrls: string[];
+  compressedDataUrls: string[]; // Pre-compressed images for API submission
   metadata: AssessmentMetadata | null;
   report: ReportType | null;
   sessionId: string | null;
@@ -34,6 +35,7 @@ export function AssessmentWizard() {
     step: 'details',
     images: [],
     imagePreviewUrls: [],
+    compressedDataUrls: [],
     metadata: null,
     report: null,
     sessionId: null,
@@ -47,20 +49,31 @@ export function AssessmentWizard() {
   const [existingRoomType, setExistingRoomType] = useState<RoomType | undefined>(undefined);
 
   // Polling interval ref for cleanup
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track consecutive polling failures (BUG-004)
   const consecutiveFailuresRef = useRef(0);
+  // Track poll status for UX (cold start visibility)
+  const [pollStatus, setPollStatus] = useState<'pending' | 'in_progress' | undefined>(undefined);
+  // Track polling start time for progressive intervals
+  const pollStartTimeRef = useRef<number>(0);
 
   // Polling constants
   const POLLING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (BUG-007)
-  const POLLING_INTERVAL_MS = 5000; // 5 seconds
   const MAX_CONSECUTIVE_FAILURES = 3;
+
+  // Progressive polling: faster initially, slower during cold start
+  function getPollingInterval(): number {
+    const elapsed = Date.now() - pollStartTimeRef.current;
+    if (elapsed < 30000) return 5000;   // First 30s: every 5s (responsive for warm workers)
+    if (elapsed < 120000) return 10000; // 30s-2min: every 10s (cold start territory)
+    return 15000;                        // 2min+: every 15s (extended wait)
+  }
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
+        clearTimeout(pollIntervalRef.current);
       }
     };
   }, []);
@@ -109,8 +122,13 @@ export function AssessmentWizard() {
   }, [assessmentId, updateState]);
 
   const handleImagesChange = useCallback(
-    (images: File[], previewUrls: string[]) => {
-      updateState({ images, imagePreviewUrls: previewUrls, error: null });
+    (images: File[], previewUrls: string[], compressedDataUrls?: string[]) => {
+      updateState({
+        images,
+        imagePreviewUrls: previewUrls,
+        compressedDataUrls: compressedDataUrls ?? [],
+        error: null,
+      });
     },
     [updateState]
   );
@@ -147,7 +165,12 @@ export function AssessmentWizard() {
 
       try {
         // Submit job (returns immediately with jobId)
-        const submitResult = await submitAssessmentJob(state.images, metadata);
+        // Pass compressed images for ~90% payload reduction
+        const submitResult = await submitAssessmentJob(
+          state.images,
+          metadata,
+          state.compressedDataUrls.length > 0 ? state.compressedDataUrls : undefined
+        );
 
         if (!submitResult.success) {
           updateState({
@@ -162,124 +185,131 @@ export function AssessmentWizard() {
 
         // Reset consecutive failures counter
         consecutiveFailuresRef.current = 0;
+        pollStartTimeRef.current = Date.now();
+        setPollStatus('pending');
 
-        // Poll for completion with timeout
-        pollIntervalRef.current = setInterval(async () => {
-          // Check for timeout (BUG-007)
-          if (Date.now() - startTime > POLLING_TIMEOUT_MS) {
-            console.error('[Wizard] Polling timeout reached');
-            if (pollIntervalRef.current) {
-              clearInterval(pollIntervalRef.current);
+        // Poll for completion with progressive intervals and timeout
+        const schedulePoll = () => {
+          pollIntervalRef.current = setTimeout(async () => {
+            // Check for timeout (BUG-007)
+            if (Date.now() - startTime > POLLING_TIMEOUT_MS) {
+              console.error('[Wizard] Polling timeout reached');
               pollIntervalRef.current = null;
+              setPollStatus(undefined);
+              updateState({
+                step: 'details',
+                isLoading: false,
+                error: 'Assessment is taking longer than expected. Please try again or contact support if the issue persists.',
+              });
+              return;
             }
-            updateState({
-              step: 'details',
-              isLoading: false,
-              error: 'Assessment is taking longer than expected. Please try again or contact support if the issue persists.',
-            });
-            return;
-          }
 
-          try {
-            const statusResult = await getJobStatus(jobId);
+            try {
+              const statusResult = await getJobStatus(jobId);
 
-            if (!statusResult.success) {
+              if (!statusResult.success) {
+                // Track consecutive failures (BUG-004)
+                consecutiveFailuresRef.current++;
+                console.warn(`[Wizard] Status check failed (${consecutiveFailuresRef.current}/${MAX_CONSECUTIVE_FAILURES}), will retry`);
+
+                if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+                  pollIntervalRef.current = null;
+                  setPollStatus(undefined);
+                  updateState({
+                    step: 'details',
+                    isLoading: false,
+                    error: 'Unable to check assessment status. Please check your connection and try again.',
+                  });
+                  return;
+                }
+                schedulePoll(); // Keep polling on transient errors
+                return;
+              }
+
+              // Reset consecutive failures on success
+              consecutiveFailuresRef.current = 0;
+
+              const { status, error } = statusResult.data;
+
+              // Update poll status for UX (cold start visibility)
+              if (status === 'pending' || status === 'in_progress') {
+                setPollStatus(status);
+              }
+
+              if (status === 'completed') {
+                // Stop polling
+                pollIntervalRef.current = null;
+                setPollStatus(undefined);
+
+                // Fetch result
+                const resultResponse = await getJobResult(jobId);
+                const processingTime = Date.now() - startTime;
+
+                if (resultResponse.success) {
+                  // Update the assessment in database with results and session_id (BUG-003: retry with warning)
+                  if (assessmentId) {
+                    const patchSuccess = await updateAssessmentWithRetry(assessmentId, {
+                      status: 'completed',
+                      executive_summary: resultResponse.data.report.executiveSummary,
+                      session_id: resultResponse.data.sessionId,
+                    });
+
+                    if (!patchSuccess) {
+                      console.error('[Wizard] Failed to persist assessment status after 3 retries');
+                      // Non-blocking warning - assessment is still viewable
+                    }
+                  }
+
+                  updateState({
+                    step: 'complete',
+                    report: resultResponse.data.report,
+                    sessionId: resultResponse.data.sessionId,
+                    isLoading: false,
+                    processingTime,
+                  });
+                } else {
+                  updateState({
+                    step: 'details',
+                    isLoading: false,
+                    error: resultResponse.error.message,
+                  });
+                }
+              } else if (status === 'failed') {
+                // Stop polling
+                pollIntervalRef.current = null;
+                setPollStatus(undefined);
+
+                updateState({
+                  step: 'details',
+                  isLoading: false,
+                  error: error || 'Assessment processing failed',
+                });
+              } else {
+                // For 'pending' or 'in_progress', keep polling with progressive interval
+                schedulePoll();
+              }
+            } catch (pollError) {
+              console.error('[Wizard] Polling error:', pollError);
               // Track consecutive failures (BUG-004)
               consecutiveFailuresRef.current++;
-              console.warn(`[Wizard] Status check failed (${consecutiveFailuresRef.current}/${MAX_CONSECUTIVE_FAILURES}), will retry`);
 
               if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
-                if (pollIntervalRef.current) {
-                  clearInterval(pollIntervalRef.current);
-                  pollIntervalRef.current = null;
-                }
+                pollIntervalRef.current = null;
+                setPollStatus(undefined);
                 updateState({
                   step: 'details',
                   isLoading: false,
                   error: 'Unable to check assessment status. Please check your connection and try again.',
                 });
+                return;
               }
-              return; // Keep polling on transient errors
+              // Keep polling on transient errors
+              schedulePoll();
             }
+          }, getPollingInterval());
+        };
 
-            // Reset consecutive failures on success
-            consecutiveFailuresRef.current = 0;
-
-            const { status, error } = statusResult.data;
-
-            if (status === 'completed') {
-              // Stop polling
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
-                pollIntervalRef.current = null;
-              }
-
-              // Fetch result
-              const resultResponse = await getJobResult(jobId);
-              const processingTime = Date.now() - startTime;
-
-              if (resultResponse.success) {
-                // Update the assessment in database with results and session_id (BUG-003: retry with warning)
-                if (assessmentId) {
-                  const patchSuccess = await updateAssessmentWithRetry(assessmentId, {
-                    status: 'completed',
-                    executive_summary: resultResponse.data.report.executiveSummary,
-                    session_id: resultResponse.data.sessionId,
-                  });
-
-                  if (!patchSuccess) {
-                    console.error('[Wizard] Failed to persist assessment status after 3 retries');
-                    // Non-blocking warning - assessment is still viewable
-                  }
-                }
-
-                updateState({
-                  step: 'complete',
-                  report: resultResponse.data.report,
-                  sessionId: resultResponse.data.sessionId,
-                  isLoading: false,
-                  processingTime,
-                });
-              } else {
-                updateState({
-                  step: 'details',
-                  isLoading: false,
-                  error: resultResponse.error.message,
-                });
-              }
-            } else if (status === 'failed') {
-              // Stop polling
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
-                pollIntervalRef.current = null;
-              }
-
-              updateState({
-                step: 'details',
-                isLoading: false,
-                error: error || 'Assessment processing failed',
-              });
-            }
-            // For 'pending' or 'in_progress', keep polling
-          } catch (pollError) {
-            console.error('[Wizard] Polling error:', pollError);
-            // Track consecutive failures (BUG-004)
-            consecutiveFailuresRef.current++;
-
-            if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
-                pollIntervalRef.current = null;
-              }
-              updateState({
-                step: 'details',
-                isLoading: false,
-                error: 'Unable to check assessment status. Please check your connection and try again.',
-              });
-            }
-            // Keep polling on transient errors
-          }
-        }, POLLING_INTERVAL_MS);
+        schedulePoll();
       } catch {
         updateState({
           step: 'details',
@@ -288,7 +318,7 @@ export function AssessmentWizard() {
         });
       }
     },
-    [state.images, assessmentId, updateState, updateAssessmentWithRetry, POLLING_TIMEOUT_MS, POLLING_INTERVAL_MS, MAX_CONSECUTIVE_FAILURES]
+    [state.images, state.compressedDataUrls, assessmentId, updateState, updateAssessmentWithRetry, POLLING_TIMEOUT_MS, MAX_CONSECUTIVE_FAILURES]
   );
 
   const handleChatMessage = useCallback(
@@ -410,6 +440,7 @@ export function AssessmentWizard() {
                 <ImageUpload
                   images={state.images}
                   previewUrls={state.imagePreviewUrls}
+                  compressedDataUrls={state.compressedDataUrls}
                   onImagesChange={handleImagesChange}
                   onNext={() => {}} // No-op, form handles submit
                   isLoadingMetadata={state.isLoadingAssessment}
@@ -422,7 +453,7 @@ export function AssessmentWizard() {
       )}
 
       {state.step === 'processing' && (
-        <ProcessingView imageCount={state.images.length} />
+        <ProcessingView imageCount={state.images.length} status={pollStatus} />
       )}
 
       {state.step === 'complete' && state.report && (

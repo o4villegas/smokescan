@@ -132,14 +132,25 @@ type JobStatusResponse = {
 
 /**
  * Submit assessment job (returns immediately with jobId)
+ * @param images - Original File objects (used as fallback if compressedDataUrls not provided)
+ * @param metadata - Assessment metadata
+ * @param compressedDataUrls - Optional pre-compressed data URLs (preferred for smaller payloads)
  */
 export async function submitAssessmentJob(
   images: File[],
-  metadata: AssessmentMetadata
+  metadata: AssessmentMetadata,
+  compressedDataUrls?: string[]
 ): Promise<ApiResponse<JobSubmitResponse>> {
   try {
-    // Convert images to base64
-    const imageBase64Array = await Promise.all(images.map(fileToBase64));
+    // Use pre-compressed data URLs if available, otherwise convert files to base64
+    let imageBase64Array: string[];
+    if (compressedDataUrls && compressedDataUrls.length === images.length) {
+      imageBase64Array = compressedDataUrls;
+      console.log('[API] Using pre-compressed images');
+    } else {
+      imageBase64Array = await Promise.all(images.map(fileToBase64));
+      console.log('[API] Converting files to base64 (no compression)');
+    }
 
     const response = await fetch(`${API_BASE}/assess/submit`, {
       method: 'POST',
