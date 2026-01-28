@@ -59,7 +59,7 @@ export function AssessmentResults({
           <ImageGallery images={images} />
 
           {/* Report Content (headerless) */}
-          <AssessmentReport report={report} showHeader={false} />
+          <AssessmentReport report={report} onStartChat={() => {}} onNewAssessment={() => {}} />
         </div>
 
         {/* Right: Chat Panel (1 col on lg) */}
@@ -68,8 +68,8 @@ export function AssessmentResults({
             <ChatInterface
               messages={chatHistory}
               onSendMessage={onSendMessage}
+              onBack={() => {}}
               isLoading={isLoading}
-              embedded={true}
             />
           </div>
         </div>
