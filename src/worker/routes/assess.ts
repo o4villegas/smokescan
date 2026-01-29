@@ -80,7 +80,7 @@ export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
     const uploadResult = await storage.uploadImage(
       sessionId,
       `image-${index}.${contentType.split('/')[1] || 'jpg'}`,
-      bytes.buffer,
+      bytes,
       contentType
     );
 
@@ -212,16 +212,26 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
           bytes[i] = binaryString.charCodeAt(i);
         }
 
+        // Pass Uint8Array directly (not .buffer) to avoid potential ArrayBuffer detachment
         const uploadResult = await storage.uploadImage(
           sessionId,
           `image-${index}.${contentType.split('/')[1] || 'jpg'}`,
-          bytes.buffer,
+          bytes,
           contentType
         );
 
         if (!uploadResult.success) {
           throw new Error(`Failed to upload image ${index + 1}: ${uploadResult.error?.message || 'Unknown error'}`);
         }
+
+        // Verify R2 write succeeded
+        const verifyResult = await storage.getImage(uploadResult.data.key);
+        if (!verifyResult.success) {
+          console.error(`[AssessSubmit] R2 verify FAILED for key=${uploadResult.data.key}`);
+          throw new Error(`R2 verification failed for image ${index + 1}`);
+        }
+        console.log(`[AssessSubmit] R2 verified: key=${uploadResult.data.key}, size=${uploadResult.data.size}`);
+
         return uploadResult.data.key;
       })
     );

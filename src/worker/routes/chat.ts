@@ -97,7 +97,7 @@ export async function handleChat(c: Context<{ Bindings: WorkerEnv }>) {
       const uploadResult = await storage.uploadImage(
         sessionId,
         `chat-image-${Date.now()}-${i}.${contentType.split('/')[1] || 'jpg'}`,
-        bytes.buffer,
+        bytes,
         contentType
       );
 

@@ -16,7 +16,7 @@ export class StorageService {
   async uploadImage(
     assessmentId: string,
     filename: string,
-    data: ArrayBuffer | ReadableStream,
+    data: ArrayBuffer | ReadableStream | Uint8Array,
     contentType: string
   ): Promise<Result<{ key: string; size: number }, ApiError>> {
     try {
