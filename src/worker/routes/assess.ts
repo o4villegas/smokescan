@@ -435,13 +435,6 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
   const report = parseReport(resultResponse.data);
   const visionAnalysis = extractVisionSummary(resultResponse.data);
 
-  // TEMPORARY: Store raw output for debugging (remove after investigation)
-  await c.env.SMOKESCAN_SESSIONS.put(
-    `debug:raw:${jobId}`,
-    typeof resultResponse.data === 'string' ? resultResponse.data : JSON.stringify(resultResponse.data),
-    { expirationTtl: 86400 }
-  );
-
   // Save session for chat functionality
   const sessionService = new SessionService({ kv: c.env.SMOKESCAN_SESSIONS });
   const sessionState: SessionState = {
@@ -461,11 +454,13 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
   // Clean up job state (optional - keep for debugging)
   // await c.env.SMOKESCAN_SESSIONS.delete(`job:${jobId}`);
 
+  // TEMPORARY: Include raw output for debugging (remove after investigation)
   return c.json({
     success: true,
     data: {
       sessionId: jobState.sessionId,
       report,
+      rawOutput: resultResponse.data,
     },
   });
 }
