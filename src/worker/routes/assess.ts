@@ -454,13 +454,11 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
   // Clean up job state (optional - keep for debugging)
   // await c.env.SMOKESCAN_SESSIONS.delete(`job:${jobId}`);
 
-  // TEMPORARY: Include raw output for debugging (remove after investigation)
   return c.json({
     success: true,
     data: {
       sessionId: jobState.sessionId,
       report,
-      rawOutput: resultResponse.data,
     },
   });
 }
@@ -539,12 +537,12 @@ function parseReport(reportText: string): AssessmentReport {
   // Handles: "## 1. Executive Summary", "## Executive Summary", "**Executive Summary**", "1. Executive Summary"
   function extractSection(sectionName: string): string {
     const patterns = [
-      // ## 1. Section Name or ## Section Name
-      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[:\\s]*\\n([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      // ## 1. Section Name or ## Section Name (allows trailing words like "Recommendations")
+      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
       // **Section Name** or **1. Section Name**
-      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}\\*\\*[:\\s]*\\n?([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}[^*]*\\*\\*[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
       // 1. Section Name (numbered without markdown)
-      new RegExp(`\\d+\\.\\s*${sectionName}[:\\s]*\\n([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      new RegExp(`\\d+\\.\\s*${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
     ];
 
     for (const pattern of patterns) {

@@ -126,9 +126,9 @@ function parseReport(reportText: string): AssessmentReport {
 
   function extractSection(sectionName: string): string {
     const patterns = [
-      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[:\\s]*\\n([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
-      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}\\*\\*[:\\s]*\\n?([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
-      new RegExp(`\\d+\\.\\s*${sectionName}[:\\s]*\\n([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}[^*]*\\*\\*[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      new RegExp(`\\d+\\.\\s*${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
     ];
 
     for (const pattern of patterns) {
@@ -566,6 +566,26 @@ According to FDAM v4.1 (Section 2.3 Phase 2: PRA), sampling should reflect zone 
     const result = parseReport(testOutput);
 
     expect(result.restorationPriority[0].area).toBe('Burn Zone');
+  });
+
+  it('should match section headers with trailing words like "Recommendations"', () => {
+    const testOutput = `## 1. Executive Summary
+Test summary.
+
+## 4. Disposition Recommendations
+- Remove drywall in burn zone
+- Clean non-porous surfaces
+
+## 5. Sampling Recommendations
+- Tape lifts: 13 total
+- Surface wipes: 13 total`;
+
+    const result = parseReport(testOutput);
+
+    expect(result.restorationPriority.length).toBeGreaterThan(0);
+    expect(result.restorationPriority[0].action).not.toBe('Assess');
+    expect(result.scopeIndicators.length).toBeGreaterThan(0);
+    expect(result.scopeIndicators[0]).toContain('Tape lifts');
   });
 });
 
