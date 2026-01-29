@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, Send, Loader2, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { MarkdownContent } from './MarkdownContent';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -103,7 +104,11 @@ export function ChatInterface({
                   : 'bg-muted'
               )}
             >
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              {message.role === 'assistant' ? (
+                <MarkdownContent className="text-sm">{message.content}</MarkdownContent>
+              ) : (
+                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              )}
             </div>
           </div>
         ))}

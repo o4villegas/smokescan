@@ -284,17 +284,10 @@ function parseReport(reportText: string): AssessmentReport {
     }
   }
 
-  // 5. Extract Sampling Recommendations → scopeIndicators + fdamRecommendations
+  // 5. Extract Sampling Recommendations → scopeIndicators
   const samplingContent = extractSection('Sampling Recommendations') || extractSection('Sampling');
   if (samplingContent) {
-    const bullets = extractBulletPoints(samplingContent);
-    sections.scopeIndicators = bullets.slice(0, 10);
-    sections.fdamRecommendations = bullets.slice(0, 10);
-  }
-
-  const generalRecContent = extractSection('Recommendations') || extractSection('FDAM Recommendations');
-  if (generalRecContent && sections.fdamRecommendations.length === 0) {
-    sections.fdamRecommendations = extractBulletPoints(generalRecContent).slice(0, 10);
+    sections.scopeIndicators = extractBulletPoints(samplingContent).slice(0, 10);
   }
 
   // Fallbacks
@@ -305,14 +298,6 @@ function parseReport(reportText: string): AssessmentReport {
       severity: extractSeverity(reportText),
       recommendations: ['Review detailed findings', 'Conduct follow-up inspection as needed'],
     });
-  }
-
-  if (sections.fdamRecommendations.length === 0) {
-    sections.fdamRecommendations = [
-      'Conduct detailed sampling per FDAM protocols',
-      'Document all damage areas photographically',
-      'Obtain laboratory analysis of samples',
-    ];
   }
 
   if (sections.restorationPriority.length === 0) {
@@ -377,11 +362,11 @@ describe('parseReport()', () => {
       expect(removeItems.length).toBeGreaterThan(0);
     });
 
-    it('should extract Sampling Recommendations into scopeIndicators and fdamRecommendations', () => {
+    it('should extract Sampling Recommendations into scopeIndicators', () => {
       const result = parseReport(REALISTIC_MODEL_OUTPUT);
 
       expect(result.scopeIndicators.length).toBeGreaterThan(0);
-      expect(result.fdamRecommendations.length).toBeGreaterThan(0);
+      expect(result.fdamRecommendations).toEqual([]);
 
       // Check for specific sampling recommendations
       const hasLiftSample = result.scopeIndicators.some(s =>
@@ -390,14 +375,15 @@ describe('parseReport()', () => {
       expect(hasLiftSample).toBe(true);
     });
 
-    it('should populate all 5 required sections', () => {
+    it('should populate all required sections', () => {
       const result = parseReport(REALISTIC_MODEL_OUTPUT);
 
       expect(result.executiveSummary).toBeTruthy();
       expect(result.detailedAssessment.length).toBeGreaterThan(0);
-      expect(result.fdamRecommendations.length).toBeGreaterThan(0);
       expect(result.restorationPriority.length).toBeGreaterThan(0);
       expect(result.scopeIndicators.length).toBeGreaterThan(0);
+      // fdamRecommendations is intentionally empty (no separate model section)
+      expect(result.fdamRecommendations).toEqual([]);
     });
   });
 
@@ -430,8 +416,8 @@ describe('parseReport()', () => {
       expect(result.detailedAssessment.length).toBe(1);
       expect(result.detailedAssessment[0].area).toBe('General Assessment');
 
-      // Should have fallback recommendations
-      expect(result.fdamRecommendations.length).toBeGreaterThan(0);
+      // Should have fallback priorities, empty fdamRecommendations
+      expect(result.fdamRecommendations).toEqual([]);
       expect(result.restorationPriority.length).toBeGreaterThan(0);
       expect(result.scopeIndicators.length).toBeGreaterThan(0);
     });
@@ -511,7 +497,7 @@ describe('Markdown table parsing', () => {
     expect(result.restorationPriority[2].action).toBe('No Action');
   });
 
-  it('should parse table-formatted sampling into recommendations', () => {
+  it('should parse table-formatted sampling into scopeIndicators', () => {
     const testOutput = `## 5. Sampling Recommendations
 
 | Sample Type | Density | Location |
@@ -521,9 +507,9 @@ describe('Markdown table parsing', () => {
 
     const result = parseReport(testOutput);
 
-    expect(result.fdamRecommendations.length).toBe(2);
-    expect(result.fdamRecommendations[0]).toContain('Tape lift');
-    expect(result.fdamRecommendations[1]).toContain('Wipe sample');
+    expect(result.scopeIndicators.length).toBe(2);
+    expect(result.scopeIndicators[0]).toContain('Tape lift');
+    expect(result.scopeIndicators[1]).toContain('Wipe sample');
   });
 
   it('should not fragment FDAM references with periods', () => {
@@ -534,8 +520,8 @@ According to FDAM v4.1 (Section 2.3 Phase 2: PRA), sampling should reflect zone 
     const result = parseReport(testOutput);
 
     // Should be a single item, not fragmented on periods
-    expect(result.fdamRecommendations.length).toBe(1);
-    expect(result.fdamRecommendations[0]).toContain('FDAM v4.1');
+    expect(result.scopeIndicators.length).toBe(1);
+    expect(result.scopeIndicators[0]).toContain('FDAM v4.1');
   });
 
   it('should handle mixed bullets and tables in same section', () => {

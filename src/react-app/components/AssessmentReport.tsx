@@ -4,10 +4,11 @@
  */
 
 import type { AssessmentReport as ReportType } from '../types';
+import { MarkdownContent } from './MarkdownContent';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Plus, Clock, FileText, ListOrdered, CheckCircle } from 'lucide-react';
+import { MessageSquare, Plus, Clock, FileText, ListOrdered } from 'lucide-react';
 
 type AssessmentReportProps = {
   report: ReportType;
@@ -64,7 +65,9 @@ export function AssessmentReport({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground leading-relaxed">{report.executiveSummary}</p>
+          <MarkdownContent className="text-muted-foreground">
+            {report.executiveSummary}
+          </MarkdownContent>
         </CardContent>
       </Card>
 
@@ -83,7 +86,9 @@ export function AssessmentReport({
                     {item.severity}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">{item.findings}</p>
+                <MarkdownContent className="text-sm text-muted-foreground">
+                  {item.findings}
+                </MarkdownContent>
                 {item.recommendations.length > 0 && (
                   <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
                     {item.recommendations.map((rec, i) => (
@@ -96,28 +101,6 @@ export function AssessmentReport({
           </CardContent>
         </Card>
       )}
-
-      {/* FDAM Recommendations */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <CheckCircle className="h-5 w-5" />
-            FDAM Recommendations
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-2">
-            {report.fdamRecommendations.map((rec, index) => (
-              <li key={index} className="flex items-start gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                  {index + 1}
-                </span>
-                <span className="text-sm text-muted-foreground">{rec}</span>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
 
       {/* Restoration Priority Matrix */}
       {report.restorationPriority.length > 0 && (

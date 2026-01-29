@@ -751,18 +751,10 @@ function parseReport(reportText: string): AssessmentReport {
     }
   }
 
-  // 5. Extract Sampling Recommendations → scopeIndicators + fdamRecommendations
+  // 5. Extract Sampling Recommendations → scopeIndicators
   const samplingContent = extractSection('Sampling Recommendations') || extractSection('Sampling');
   if (samplingContent) {
-    const bullets = extractBulletPoints(samplingContent);
-    sections.scopeIndicators = bullets.slice(0, 10);
-    sections.fdamRecommendations = bullets.slice(0, 10);
-  }
-
-  // Also try to extract any general recommendations section
-  const generalRecContent = extractSection('Recommendations') || extractSection('FDAM Recommendations');
-  if (generalRecContent && sections.fdamRecommendations.length === 0) {
-    sections.fdamRecommendations = extractBulletPoints(generalRecContent).slice(0, 10);
+    sections.scopeIndicators = extractBulletPoints(samplingContent).slice(0, 10);
   }
 
   // Fallbacks if sections are empty
@@ -774,14 +766,6 @@ function parseReport(reportText: string): AssessmentReport {
       severity: extractSeverity(reportText),
       recommendations: ['Review detailed findings', 'Conduct follow-up inspection as needed'],
     });
-  }
-
-  if (sections.fdamRecommendations.length === 0) {
-    sections.fdamRecommendations = [
-      'Conduct detailed sampling per FDAM protocols',
-      'Document all damage areas photographically',
-      'Obtain laboratory analysis of samples',
-    ];
   }
 
   if (sections.restorationPriority.length === 0) {
