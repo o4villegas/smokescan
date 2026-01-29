@@ -126,9 +126,9 @@ function parseReport(reportText: string): AssessmentReport {
 
   function extractSection(sectionName: string): string {
     const patterns = [
-      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
-      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}[^*]*\\*\\*[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
-      new RegExp(`\\d+\\.\\s*${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##\\s|$)`, 'i'),
+      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}[^*]*\\*\\*[^\\n]*\\n+([\\s\\S]*?)(?=\\n##\\s|\\n\\*\\*\\d+\\.|$)`, 'i'),
+      new RegExp(`\\d+\\.\\s*${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##\\s|\\n\\*\\*\\d+\\.|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
     ];
 
     for (const pattern of patterns) {

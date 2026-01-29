@@ -538,11 +538,12 @@ function parseReport(reportText: string): AssessmentReport {
   function extractSection(sectionName: string): string {
     const patterns = [
       // ## 1. Section Name or ## Section Name (allows trailing words like "Recommendations")
-      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      // Only terminate on next ## header or end-of-string (not inline bold)
+      new RegExp(`##\\s*(?:\\d+\\.?\\s*)?${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##\\s|$)`, 'i'),
       // **Section Name** or **1. Section Name**
-      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}[^*]*\\*\\*[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      new RegExp(`\\*\\*(?:\\d+\\.?\\s*)?${sectionName}[^*]*\\*\\*[^\\n]*\\n+([\\s\\S]*?)(?=\\n##\\s|\\n\\*\\*\\d+\\.|$)`, 'i'),
       // 1. Section Name (numbered without markdown)
-      new RegExp(`\\d+\\.\\s*${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##|\\n\\*\\*[A-Z]|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
+      new RegExp(`\\d+\\.\\s*${sectionName}[^\\n]*\\n+([\\s\\S]*?)(?=\\n##\\s|\\n\\*\\*\\d+\\.|\\n\\d+\\.\\s+[A-Z]|$)`, 'i'),
     ];
 
     for (const pattern of patterns) {
