@@ -150,7 +150,8 @@ type JobStatusResponse = {
 export async function submitAssessmentJob(
   images: File[],
   metadata: AssessmentMetadata,
-  compressedDataUrls?: string[]
+  compressedDataUrls?: string[],
+  assessmentId?: string
 ): Promise<ApiResponse<JobSubmitResponse>> {
   try {
     // Use pre-compressed data URLs if available, otherwise convert files to base64
@@ -171,6 +172,7 @@ export async function submitAssessmentJob(
       body: JSON.stringify({
         images: imageBase64Array,
         metadata,
+        ...(assessmentId && { assessmentId }),
       }),
     });
 

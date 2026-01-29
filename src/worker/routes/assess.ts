@@ -11,7 +11,7 @@
 import type { Context } from 'hono';
 import type { WorkerEnv, AssessmentReport, SessionState, VisionAnalysisOutput, JobState, JobStatus } from '../types';
 import { AssessmentRequestSchema } from '../schemas';
-import { RunPodService, SessionService, StorageService } from '../services';
+import { RunPodService, SessionService, StorageService, DatabaseService } from '../services';
 
 export async function handleAssess(c: Context<{ Bindings: WorkerEnv }>) {
   const startTime = Date.now();
@@ -176,6 +176,7 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
   }
 
   const { images, metadata } = parsed.data;
+  const assessmentId = (body as { assessmentId?: string })?.assessmentId;
 
   // Initialize services
   const runpod = new RunPodService({
@@ -255,6 +256,7 @@ export async function handleAssessSubmit(c: Context<{ Bindings: WorkerEnv }>) {
     runpodJobId,
     status: 'pending',
     sessionId,
+    assessmentId,
     metadata,
     imageR2Keys,
     images, // Store images for result processing
@@ -451,8 +453,40 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
 
   await sessionService.save(sessionState);
 
-  // Clean up job state (optional - keep for debugging)
-  // await c.env.SMOKESCAN_SESSIONS.delete(`job:${jobId}`);
+  // Persist results to D1 if assessment is linked (non-blocking — don't fail the response)
+  if (jobState.assessmentId) {
+    try {
+      const db = new DatabaseService(c.env.SMOKESCAN_DB);
+
+      // Save full report JSON to reports table
+      await db.createReport(jobState.assessmentId, 'assessment', JSON.stringify(report));
+
+      // Link images to assessment in D1
+      for (let i = 0; i < jobState.imageR2Keys.length; i++) {
+        const r2Key = jobState.imageR2Keys[i];
+        const ext = r2Key.split('.').pop() || 'jpg';
+        await db.createImageRecord(
+          jobState.assessmentId,
+          r2Key,
+          `image-${i}.${ext}`,
+          `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+          0 // size unknown at this point
+        );
+      }
+
+      // Update assessment with summary fields
+      await db.updateAssessment(jobState.assessmentId, {
+        status: 'completed',
+        executive_summary: report.executiveSummary?.slice(0, 2000),
+        session_id: jobState.sessionId,
+        zone_classification: visionAnalysis.zoneClassification,
+        overall_severity: visionAnalysis.overallSeverity,
+        confidence_score: visionAnalysis.confidenceScore,
+      });
+    } catch (e) {
+      console.error('[AssessResult] D1 persistence failed (non-blocking):', e);
+    }
+  }
 
   return c.json({
     success: true,

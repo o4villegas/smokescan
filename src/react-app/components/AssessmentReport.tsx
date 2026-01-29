@@ -12,8 +12,8 @@ import { MessageSquare, Plus, Clock, FileText, ListOrdered, CheckCircle } from '
 type AssessmentReportProps = {
   report: ReportType;
   processingTimeMs?: number;
-  onStartChat: () => void;
-  onNewAssessment: () => void;
+  onStartChat?: () => void;
+  onNewAssessment?: () => void;
 };
 
 export function AssessmentReport({
@@ -36,16 +36,22 @@ export function AssessmentReport({
               </div>
             )}
           </div>
-          <div className="flex gap-2">
-            <Button onClick={onStartChat}>
-              <MessageSquare className="mr-2 h-4 w-4" />
-              Ask Follow-up Questions
-            </Button>
-            <Button variant="outline" onClick={onNewAssessment}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Assessment
-            </Button>
-          </div>
+          {(onStartChat || onNewAssessment) && (
+            <div className="flex gap-2">
+              {onStartChat && (
+                <Button onClick={onStartChat}>
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Ask Follow-up Questions
+                </Button>
+              )}
+              {onNewAssessment && (
+                <Button variant="outline" onClick={onNewAssessment}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Assessment
+                </Button>
+              )}
+            </div>
+          )}
         </CardHeader>
       </Card>
 

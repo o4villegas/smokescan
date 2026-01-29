@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ChatInterface } from '../components';
+import { ChatInterface, AssessmentReport } from '../components';
 import type { AssessmentWithDetails, RoomType, ChatMessage } from '../types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -250,8 +250,13 @@ export function AssessmentView() {
         </TabsList>
 
         <TabsContent value="details" className="space-y-4">
-          {/* Executive Summary */}
-          {assessment.executive_summary && (
+          {/* Full report (from D1 reports table) */}
+          {assessment.report && (
+            <AssessmentReport report={assessment.report} />
+          )}
+
+          {/* Fallback: Executive Summary only (legacy assessments without full report) */}
+          {!assessment.report && assessment.executive_summary && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Executive Summary</CardTitle>
@@ -262,8 +267,8 @@ export function AssessmentView() {
             </Card>
           )}
 
-          {/* Confidence Score */}
-          {assessment.confidence_score !== undefined && (
+          {/* Confidence Score (only when no full report) */}
+          {!assessment.report && assessment.confidence_score !== undefined && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Confidence Score</CardTitle>
@@ -312,8 +317,8 @@ export function AssessmentView() {
             </CardContent>
           </Card>
 
-          {/* Damage Items */}
-          <Card>
+          {/* Damage Items (only when no full report) */}
+          {!assessment.report && <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5" />
@@ -352,10 +357,10 @@ export function AssessmentView() {
                 </div>
               )}
             </CardContent>
-          </Card>
+          </Card>}
 
-          {/* Restoration Priorities */}
-          {assessment.restoration_priorities.length > 0 && (
+          {/* Restoration Priorities (only when no full report) */}
+          {!assessment.report && assessment.restoration_priorities.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">

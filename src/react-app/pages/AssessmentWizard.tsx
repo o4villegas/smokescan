@@ -138,30 +138,6 @@ export function AssessmentWizard() {
     [updateState]
   );
 
-  // Helper function for retrying PATCH with exponential backoff (BUG-003)
-  const updateAssessmentWithRetry = useCallback(
-    async (id: string, updateData: object, maxRetries = 3): Promise<boolean> => {
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const response = await fetch(`/api/assessments/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updateData),
-          });
-          if (response.ok) return true;
-          console.warn(`[Wizard] PATCH attempt ${attempt} failed: ${response.status}`);
-        } catch (e) {
-          console.warn(`[Wizard] PATCH attempt ${attempt} error:`, e);
-        }
-        if (attempt < maxRetries) {
-          await new Promise((r) => setTimeout(r, 1000 * attempt)); // Exponential backoff
-        }
-      }
-      return false;
-    },
-    []
-  );
-
   const handleMetadataSubmit = useCallback(
     async (metadata: AssessmentMetadata) => {
       updateState({ metadata, step: 'processing', isLoading: true, error: null });
@@ -174,7 +150,8 @@ export function AssessmentWizard() {
         const submitResult = await submitAssessmentJob(
           state.images,
           metadata,
-          state.compressedDataUrls.length > 0 ? state.compressedDataUrls : undefined
+          state.compressedDataUrls.length > 0 ? state.compressedDataUrls : undefined,
+          assessmentId
         );
 
         if (!submitResult.success) {
@@ -251,19 +228,8 @@ export function AssessmentWizard() {
                 const processingTime = Date.now() - startTime;
 
                 if (resultResponse.success) {
-                  // Update the assessment in database with results and session_id (BUG-003: retry with warning)
-                  if (assessmentId) {
-                    const patchSuccess = await updateAssessmentWithRetry(assessmentId, {
-                      status: 'completed',
-                      executive_summary: resultResponse.data.report.executiveSummary,
-                      session_id: resultResponse.data.sessionId,
-                    });
-
-                    if (!patchSuccess) {
-                      console.error('[Wizard] Failed to persist assessment status after 3 retries');
-                      // Non-blocking warning - assessment is still viewable
-                    }
-                  }
+                  // D1 persistence (report, images, assessment update) is now handled
+                  // by the backend in handleAssessResult when assessmentId is provided
 
                   updateState({
                     step: 'complete',
@@ -323,7 +289,7 @@ export function AssessmentWizard() {
         });
       }
     },
-    [state.images, state.compressedDataUrls, assessmentId, updateState, updateAssessmentWithRetry, POLLING_TIMEOUT_MS, MAX_CONSECUTIVE_FAILURES]
+    [state.images, state.compressedDataUrls, assessmentId, updateState, POLLING_TIMEOUT_MS, MAX_CONSECUTIVE_FAILURES]
   );
 
   const handleChatMessage = useCallback(

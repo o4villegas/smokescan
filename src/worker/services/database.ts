@@ -18,6 +18,7 @@ import type {
   UpdateAssessmentInput,
   ProjectWithAssessments,
   AssessmentWithDetails,
+  AssessmentReport,
   DamageType,
   Severity,
   SurfaceType,
@@ -260,12 +261,24 @@ export class DatabaseService {
 
       const assessment = parseAssessmentRow(assessmentRow);
 
-      const [images, damageItems, labSamples, priorities] = await Promise.all([
+      const [images, damageItems, labSamples, priorities, reports] = await Promise.all([
         this.db.prepare('SELECT * FROM images WHERE assessment_id = ?').bind(id).all<ImageRecord>(),
         this.db.prepare('SELECT * FROM damage_items WHERE assessment_id = ?').bind(id).all<DamageItem>(),
         this.db.prepare('SELECT * FROM lab_samples WHERE assessment_id = ?').bind(id).all<LabSample>(),
         this.db.prepare('SELECT * FROM restoration_priorities WHERE assessment_id = ? ORDER BY priority').bind(id).all<RestorationPriority>(),
+        this.db.prepare("SELECT * FROM reports WHERE assessment_id = ? AND report_type = 'assessment' ORDER BY created_at DESC LIMIT 1").bind(id).all<ReportRecord>(),
       ]);
+
+      // Parse report JSON if available
+      let report: AssessmentReport | undefined;
+      const reportRecord = reports.results[0];
+      if (reportRecord?.content_json) {
+        try {
+          report = JSON.parse(reportRecord.content_json) as AssessmentReport;
+        } catch {
+          // Ignore parse errors — report will be undefined
+        }
+      }
 
       return {
         success: true,
@@ -275,6 +288,7 @@ export class DatabaseService {
           damage_items: damageItems.results,
           lab_samples: labSamples.results,
           restoration_priorities: priorities.results,
+          report,
         },
       };
     } catch (e) {

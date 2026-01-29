@@ -199,6 +199,7 @@ export type JobState = {
   runpodJobId: string;
   status: JobStatus;
   sessionId: string;
+  assessmentId?: string; // D1 assessment ID for persisting results
   metadata: AssessmentMetadata;
   imageR2Keys: string[];
   images: string[]; // base64 images for RunPod
@@ -393,4 +394,5 @@ export type AssessmentWithDetails = Assessment & {
   damage_items: DamageItem[];
   lab_samples: LabSample[];
   restoration_priorities: RestorationPriority[];
+  report?: AssessmentReport;
 };

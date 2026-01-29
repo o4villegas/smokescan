@@ -140,6 +140,7 @@ export type AssessmentWithDetails = Assessment & {
   damage_items: DamageItem[];
   lab_samples: unknown[];
   restoration_priorities: RestorationPriority[];
+  report?: AssessmentReport;
 };
 
 export type ChatMessage = {
