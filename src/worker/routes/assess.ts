@@ -453,8 +453,8 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
 
   await sessionService.save(sessionState);
 
-  // Persist results to D1 if assessment is linked (non-blocking — don't fail the response)
-  if (jobState.assessmentId) {
+  // Persist results to D1 once if assessment is linked (non-blocking — don't fail the response)
+  if (jobState.assessmentId && !jobState.d1Persisted) {
     try {
       const db = new DatabaseService(c.env.SMOKESCAN_DB);
 
@@ -483,6 +483,14 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
         overall_severity: visionAnalysis.overallSeverity,
         confidence_score: visionAnalysis.confidenceScore,
       });
+
+      // Mark as persisted to prevent duplicate inserts on subsequent result fetches
+      jobState.d1Persisted = true;
+      await c.env.SMOKESCAN_SESSIONS.put(
+        `job:${jobId}`,
+        JSON.stringify(jobState),
+        { expirationTtl: JOB_TTL }
+      );
     } catch (e) {
       console.error('[AssessResult] D1 persistence failed (non-blocking):', e);
     }

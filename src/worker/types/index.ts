@@ -206,6 +206,7 @@ export type JobState = {
   createdAt: string;
   updatedAt: string;
   error?: string;
+  d1Persisted?: boolean; // Prevents duplicate D1 inserts on repeated result fetches
 };
 
 // API Request/Response types
