@@ -223,20 +223,33 @@ export function ProjectDetail() {
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {project.assessments.map((assessment) => {
+            {[...project.assessments]
+              .sort((a, b) => {
+                // Source location (fire origin room) listed first
+                const aIsSource = a.is_fire_origin ? 1 : 0;
+                const bIsSource = b.is_fire_origin ? 1 : 0;
+                return bIsSource - aIsSource;
+              })
+              .map((assessment) => {
               // Route draft/in-progress to wizard, completed to view
               const assessmentUrl = assessment.status === 'draft' || assessment.status === 'in-progress'
                 ? `/projects/${id}/assess/${assessment.id}`
                 : `/assessments/${assessment.id}`;
+              const isSourceLocation = !!assessment.is_fire_origin;
               return (
               <Link key={assessment.id} to={assessmentUrl}>
-                <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
+                <Card className={`hover:border-primary/50 transition-colors cursor-pointer h-full${isSourceLocation ? ' border-destructive/50 border-2' : ''}`}>
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between">
                       <h4 className="font-medium">
                         {assessment.room_name || ROOM_TYPE_LABELS[assessment.room_type]}
                       </h4>
-                      <Badge variant="secondary">{assessment.phase}</Badge>
+                      <div className="flex gap-1">
+                        {isSourceLocation && (
+                          <Badge variant="destructive">Source Location</Badge>
+                        )}
+                        <Badge variant="secondary">{assessment.phase}</Badge>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">

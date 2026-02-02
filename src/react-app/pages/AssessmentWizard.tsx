@@ -109,7 +109,7 @@ export function AssessmentWizard() {
                   height_ft: assessment.dimensions.height_ft,
                 },
                 sensory_observations: assessment.sensory_observations,
-                // fireOrigin and notes intentionally omitted (transient, not stored)
+                isFireOrigin: assessment.is_fire_origin,
               };
               updateState({ metadata: initialMetadata, isLoadingAssessment: false });
             } else {

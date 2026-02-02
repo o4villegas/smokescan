@@ -63,6 +63,7 @@ const CreateAssessmentSchema = z.object({
   floor_level: FloorLevelSchema.optional(),
   dimensions: RoomDimensionsSchema.optional(),
   sensory_observations: SensoryObservationsSchema.optional(),
+  is_fire_origin: z.boolean().optional(),
 });
 
 const UpdateAssessmentSchema = z.object({

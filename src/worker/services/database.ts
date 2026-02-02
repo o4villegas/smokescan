@@ -27,9 +27,10 @@ import type {
 
 // Raw database row type (JSON fields are strings)
 // structure_type is stored directly (not JSON), so it's inherited from Assessment
-type AssessmentRow = Omit<Assessment, 'dimensions' | 'sensory_observations'> & {
+type AssessmentRow = Omit<Assessment, 'dimensions' | 'sensory_observations' | 'is_fire_origin'> & {
   dimensions_json: string | null;
   sensory_observations_json: string | null;
+  is_fire_origin: number | null;
 };
 
 // Helper to parse assessment from database row
@@ -50,6 +51,7 @@ function parseAssessmentRow(row: AssessmentRow): Assessment {
     floor_level: row.floor_level,
     dimensions: row.dimensions_json ? JSON.parse(row.dimensions_json) : undefined,
     sensory_observations: row.sensory_observations_json ? JSON.parse(row.sensory_observations_json) : undefined,
+    is_fire_origin: row.is_fire_origin === 1,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -187,8 +189,8 @@ export class DatabaseService {
 
       await this.db
         .prepare(
-          `INSERT INTO assessments (id, project_id, room_type, room_name, structure_type, floor_level, dimensions_json, sensory_observations_json, phase, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PRE', 'draft', ?, ?)`
+          `INSERT INTO assessments (id, project_id, room_type, room_name, structure_type, floor_level, dimensions_json, sensory_observations_json, is_fire_origin, phase, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PRE', 'draft', ?, ?)`
         )
         .bind(
           id,
@@ -199,6 +201,7 @@ export class DatabaseService {
           input.floor_level ?? null,
           dimensionsJson,
           sensoryObservationsJson,
+          input.is_fire_origin ? 1 : 0,
           now,
           now
         )
@@ -215,6 +218,7 @@ export class DatabaseService {
         floor_level: input.floor_level,
         dimensions: input.dimensions,
         sensory_observations: input.sensory_observations,
+        is_fire_origin: input.is_fire_origin,
         created_at: now,
         updated_at: now,
       };
@@ -349,6 +353,10 @@ export class DatabaseService {
       if (input.sensory_observations !== undefined) {
         updates.push('sensory_observations_json = ?');
         values.push(JSON.stringify(input.sensory_observations));
+      }
+      if (input.is_fire_origin !== undefined) {
+        updates.push('is_fire_origin = ?');
+        values.push(input.is_fire_origin ? 1 : 0);
       }
 
       values.push(id);

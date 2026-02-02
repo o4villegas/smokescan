@@ -103,6 +103,7 @@ export function MetadataForm({
 
   // Additional info
   const [fireOrigin, setFireOrigin] = useState(initialData?.fireOrigin ?? '');
+  const [isFireOrigin, setIsFireOrigin] = useState(initialData?.isFireOrigin ?? false);
   const [notes, setNotes] = useState(initialData?.notes ?? '');
 
   // Auto-calculate area and volume
@@ -174,6 +175,7 @@ export function MetadataForm({
       },
       sensory_observations: sensoryObs,
       fireOrigin: fireOrigin.trim() || undefined,
+      isFireOrigin: isFireOrigin || undefined,
       notes: notes.trim() || undefined,
     });
   };
@@ -413,6 +415,15 @@ export function MetadataForm({
               placeholder="e.g., Kitchen stove, electrical panel"
               maxLength={200}
             />
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isFireOrigin}
+                onChange={(e) => setIsFireOrigin(e.target.checked)}
+                className="rounded border-border"
+              />
+              This room is the fire origin (Source Location)
+            </label>
           </div>
 
           {/* Row 6: Notes */}

@@ -119,7 +119,7 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
     const requestBody = {
       input: {
         messages: [{ role: 'user', content }],
-        max_tokens: 8000,
+        max_tokens: 10000,
       },
     };
 
@@ -338,7 +338,7 @@ Generate a comprehensive FDAM assessment report. Consider all metadata and field
     const requestBody = {
       input: {
         messages: [{ role: 'user', content }],
-        max_tokens: 8000,
+        max_tokens: 10000,
       },
     };
 

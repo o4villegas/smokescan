@@ -484,7 +484,7 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
         );
       }
 
-      // Update assessment with summary fields
+      // Update assessment with summary fields and fire_origin from metadata
       await db.updateAssessment(jobState.assessmentId, {
         status: 'completed',
         executive_summary: report.executiveSummary?.slice(0, 2000),
@@ -492,6 +492,7 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
         zone_classification: visionAnalysis.zoneClassification,
         overall_severity: visionAnalysis.overallSeverity,
         confidence_score: visionAnalysis.confidenceScore,
+        ...(jobState.metadata?.isFireOrigin && { is_fire_origin: true }),
       });
 
       // Mark as persisted to prevent duplicate inserts on subsequent result fetches
@@ -539,21 +540,40 @@ export async function handleAssessWarmup(c: Context<{ Bindings: WorkerEnv }>) {
  * Used to provide context in follow-up chat sessions.
  */
 function extractVisionSummary(reportText: string): VisionAnalysisOutput {
-  // Extract zone classification from report
+  // Extract zone classification from the Executive Summary only (not full report).
+  // The full report contains FDAM definition tables that mention all zone types,
+  // which caused false matches (e.g., far-field rooms matching "burn zone" in definitions).
+  const execSummaryMatch = reportText.match(
+    /##\s*(?:\d+\.?\s*)?Executive\s+Summary[^\n]*\n+([\s\S]*?)(?=\n##\s|$)/i
+  );
+  const execSummary = execSummaryMatch?.[1] || reportText.slice(0, 1500);
+
   let zoneClassification: 'burn' | 'near-field' | 'far-field' = 'far-field';
-  if (/\bburn\s*zone\b/i.test(reportText)) {
-    zoneClassification = 'burn';
-  } else if (/\bnear[-\s]?field\b/i.test(reportText)) {
-    zoneClassification = 'near-field';
+  // Look for explicit zone classification statements first
+  const zoneStatement = execSummary.match(
+    /zone\s*(?:classification)?[:\s]*\*{0,2}\s*(burn|near[-\s]?field|far[-\s]?field|background)/i
+  );
+  if (zoneStatement) {
+    const zone = zoneStatement[1].toLowerCase().replace(/\s+/g, '-');
+    if (zone === 'burn') zoneClassification = 'burn';
+    else if (zone.startsWith('near')) zoneClassification = 'near-field';
+    else zoneClassification = 'far-field'; // far-field and background both map to far-field
+  } else {
+    // Fallback: search executive summary for zone mentions (not full report)
+    if (/\bburn\s*zone\b/i.test(execSummary)) {
+      zoneClassification = 'burn';
+    } else if (/\bnear[-\s]?field\b/i.test(execSummary)) {
+      zoneClassification = 'near-field';
+    }
   }
 
-  // Extract severity from report
+  // Extract severity from executive summary only
   let overallSeverity: 'heavy' | 'moderate' | 'light' | 'trace' | 'none' = 'moderate';
-  if (/\b(heavy|severe)\s*(damage|contamination)\b/i.test(reportText)) {
+  if (/\b(heavy|severe)\s*(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'heavy';
-  } else if (/\blight\s*(damage|contamination)\b/i.test(reportText)) {
+  } else if (/\blight\s*(smoke\s*)?damage\b/i.test(execSummary)) {
     overallSeverity = 'light';
-  } else if (/\btrace\b/i.test(reportText)) {
+  } else if (/\btrace\b/i.test(execSummary)) {
     overallSeverity = 'trace';
   }
 
@@ -726,7 +746,19 @@ function parseReport(reportText: string): AssessmentReport {
     if (tableRows.length > 0) {
       // Table format: first cell = surface, remaining cells = method/rationale
       let priority = 1;
+      // Vague area names that indicate parsed table headers, not real data
+      const vagueAreaPattern = /^(surface|material|area|item|component)$/i;
+      const headerRationalePattern = /^(condition|disposition|rationale|recommendation|reason)/i;
+
       for (const cells of tableRows.slice(0, 10)) {
+        const areaName = cells[0]?.trim() || '';
+        const rationaleText = cells.slice(1).join('; ');
+
+        // Skip rows that are parsed table headers or placeholders
+        if (vagueAreaPattern.test(areaName) || headerRationalePattern.test(rationaleText.trim())) {
+          continue;
+        }
+
         const fullText = cells.join(' ').toLowerCase();
         let action = 'Assess';
         if (/\bremove\b|\breplace\b|\bdiscard\b/.test(fullText)) action = 'Remove';
@@ -735,9 +767,9 @@ function parseReport(reportText: string): AssessmentReport {
 
         sections.restorationPriority.push({
           priority: priority++,
-          area: cells[0].slice(0, 50) || `Item ${priority - 1}`,
+          area: areaName.slice(0, 50) || `Item ${priority - 1}`,
           action,
-          rationale: cells.slice(1).join('; '),
+          rationale: rationaleText,
         });
       }
     } else {

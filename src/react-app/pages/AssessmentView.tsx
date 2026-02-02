@@ -218,6 +218,9 @@ export function AssessmentView() {
               {assessment.room_name || ROOM_TYPE_LABELS[assessment.room_type]}
             </CardTitle>
             <div className="flex flex-wrap gap-2">
+              {assessment.is_fire_origin && (
+                <Badge variant="destructive">Source Location</Badge>
+              )}
               <Badge variant="secondary">{assessment.phase}</Badge>
               <Badge variant="outline">{assessment.status.replace('-', ' ')}</Badge>
               {assessment.zone_classification && (

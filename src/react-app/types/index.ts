@@ -94,6 +94,7 @@ export type Assessment = {
   floor_level?: FloorLevel;
   dimensions?: RoomDimensions;
   sensory_observations?: SensoryObservations;
+  is_fire_origin?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -163,6 +164,7 @@ export type AssessmentMetadata = {
   dimensions: RoomDimensionsInput; // MANDATORY per FDAM methodology
   sensory_observations?: SensoryObservations;
   fireOrigin?: string;
+  isFireOrigin?: boolean;
   notes?: string;
 };
 
