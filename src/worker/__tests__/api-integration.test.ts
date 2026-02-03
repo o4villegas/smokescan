@@ -656,7 +656,17 @@ function extractZoneAndSeverity(reportText: string) {
   }
 
   let overallSeverity: 'heavy' | 'moderate' | 'light' | 'trace' | 'none' = 'moderate';
-  if (/\b(heavy|severe)\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
+  const severityLabel = execSummary.match(
+    /severity\s*(?:level|rating)?[:\s]*\*{0,2}\s*(severe|heavy|moderate|light|trace|none)/i
+  );
+  if (severityLabel) {
+    const label = severityLabel[1].toLowerCase();
+    if (label === 'severe' || label === 'heavy') overallSeverity = 'heavy';
+    else if (label === 'light') overallSeverity = 'light';
+    else if (label === 'trace') overallSeverity = 'trace';
+    else if (label === 'none') overallSeverity = 'none';
+    else overallSeverity = 'moderate';
+  } else if (/\b(heavy|severe)\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'heavy';
   } else if (/\blight\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'light';
@@ -803,6 +813,32 @@ Burn zone.`;
 
 **Severity:** Light Contamination (Localized)
 **Zone Classification:** Far-Field Zone
+
+## 2. Zone Classification
+Far-field.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.overallSeverity).toBe('light');
+  });
+
+  it('should extract heavy from explicit "Severity Level: Severe" label', () => {
+    const report = `## 1. Executive Summary
+
+**Severity Level:** Severe
+**Overall Zone Classification:** Burn Zone (Entire Room)
+
+## 2. Zone Classification
+Burn zone.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.overallSeverity).toBe('heavy');
+  });
+
+  it('should extract light from explicit "Severity: Light" label', () => {
+    const report = `## 1. Executive Summary
+
+**Severity:** Light
+No visible soot. Faint odor only.
 
 ## 2. Zone Classification
 Far-field.`;

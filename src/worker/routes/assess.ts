@@ -568,10 +568,22 @@ function extractVisionSummary(reportText: string): VisionAnalysisOutput {
   }
 
   // Extract severity from executive summary only
-  // Allow up to 30 chars between severity keyword and damage/contamination
-  // to handle phrases like "severe fire and smoke damage" or "Light Contamination"
+  // Three patterns checked in order:
+  // 1. Explicit label: "Severity Level: Severe" or "Severity: Heavy"
+  // 2. Proximity: "severe fire and smoke damage" (keyword near damage/contamination)
+  // 3. Standalone keyword fallbacks (trace, moderate)
   let overallSeverity: 'heavy' | 'moderate' | 'light' | 'trace' | 'none' = 'moderate';
-  if (/\b(heavy|severe)\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
+  const severityLabel = execSummary.match(
+    /severity\s*(?:level|rating)?[:\s]*\*{0,2}\s*(severe|heavy|moderate|light|trace|none)/i
+  );
+  if (severityLabel) {
+    const label = severityLabel[1].toLowerCase();
+    if (label === 'severe' || label === 'heavy') overallSeverity = 'heavy';
+    else if (label === 'light') overallSeverity = 'light';
+    else if (label === 'trace') overallSeverity = 'trace';
+    else if (label === 'none') overallSeverity = 'none';
+    else overallSeverity = 'moderate';
+  } else if (/\b(heavy|severe)\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'heavy';
   } else if (/\blight\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'light';
