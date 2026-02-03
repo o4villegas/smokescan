@@ -666,9 +666,9 @@ function extractZoneAndSeverity(reportText: string) {
     else if (label === 'trace') overallSeverity = 'trace';
     else if (label === 'none') overallSeverity = 'none';
     else overallSeverity = 'moderate';
-  } else if (/\b(heavy|severe)\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
+  } else if (/\b(heavy|severe)\b[\w\s,*]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'heavy';
-  } else if (/\blight\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
+  } else if (/\blight\b[\w\s,*]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'light';
   } else if (/\btrace\b/i.test(execSummary)) {
     overallSeverity = 'trace';
@@ -819,6 +819,18 @@ Far-field.`;
 
     const result = extractZoneAndSeverity(report);
     expect(result.overallSeverity).toBe('light');
+  });
+
+  it('should extract heavy severity when keyword wrapped in markdown bold (e.g. **Heavy** contamination)', () => {
+    const report = `## 1. Executive Summary
+
+The **ceiling, upper cabinetry, and backwalls** demonstrate **Heavy** contamination, while lower walls show moderate impacts.
+
+## 2. Zone Classification
+Burn zone.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.overallSeverity).toBe('heavy');
   });
 
   it('should extract heavy from explicit "Severity Level: Severe" label', () => {

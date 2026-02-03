@@ -583,9 +583,9 @@ function extractVisionSummary(reportText: string): VisionAnalysisOutput {
     else if (label === 'trace') overallSeverity = 'trace';
     else if (label === 'none') overallSeverity = 'none';
     else overallSeverity = 'moderate';
-  } else if (/\b(heavy|severe)\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
+  } else if (/\b(heavy|severe)\b[\w\s,*]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'heavy';
-  } else if (/\blight\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
+  } else if (/\blight\b[\w\s,*]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'light';
   } else if (/\btrace\b/i.test(execSummary)) {
     overallSeverity = 'trace';
@@ -645,9 +645,9 @@ function parseReport(reportText: string): AssessmentReport {
   // Uses broadened patterns consistent with extractVisionSummary() severity extraction
   function extractSeverity(text: string): 'heavy' | 'moderate' | 'light' | 'trace' | 'none' {
     const lowerText = text.toLowerCase();
-    if (/\b(heavy|severe|significant)\b[\w\s,]{0,30}(damage|contamination)\b/.test(lowerText)) return 'heavy';
+    if (/\b(heavy|severe|significant)\b[\w\s,*]{0,30}(damage|contamination)\b/.test(lowerText)) return 'heavy';
     if (/\b(heavy|severe|significant)\b/.test(lowerText)) return 'heavy';
-    if (/\blight\b[\w\s,]{0,30}(damage|contamination)\b/.test(lowerText)) return 'light';
+    if (/\blight\b[\w\s,*]{0,30}(damage|contamination)\b/.test(lowerText)) return 'light';
     if (/\bmoderate\b/.test(lowerText)) return 'moderate';
     if (/\blight\b/.test(lowerText)) return 'light';
     if (/\btrace\b/.test(lowerText)) return 'trace';
