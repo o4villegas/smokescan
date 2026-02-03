@@ -336,6 +336,7 @@ export type ReportRecord = {
   assessment_id: string;
   report_type: 'assessment' | 'cleaning-spec' | 'executive-summary';
   content_json: string;
+  raw_markdown?: string;
   pdf_r2_key?: string;
   created_at: string;
 };

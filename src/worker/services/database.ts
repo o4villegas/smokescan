@@ -587,7 +587,8 @@ export class DatabaseService {
     assessmentId: string,
     reportType: 'assessment' | 'cleaning-spec' | 'executive-summary',
     contentJson: string,
-    pdfR2Key?: string
+    pdfR2Key?: string,
+    rawMarkdown?: string
   ): Promise<Result<ReportRecord, ApiError>> {
     try {
       const id = generateId();
@@ -595,10 +596,10 @@ export class DatabaseService {
 
       await this.db
         .prepare(
-          `INSERT INTO reports (id, assessment_id, report_type, content_json, pdf_r2_key, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`
+          `INSERT INTO reports (id, assessment_id, report_type, content_json, pdf_r2_key, raw_markdown, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
-        .bind(id, assessmentId, reportType, contentJson, pdfR2Key ?? null, now)
+        .bind(id, assessmentId, reportType, contentJson, pdfR2Key ?? null, rawMarkdown ?? null, now)
         .run();
 
       const report: ReportRecord = {
@@ -606,6 +607,7 @@ export class DatabaseService {
         assessment_id: assessmentId,
         report_type: reportType,
         content_json: contentJson,
+        raw_markdown: rawMarkdown,
         pdf_r2_key: pdfR2Key,
         created_at: now,
       };

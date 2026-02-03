@@ -253,9 +253,9 @@ function parseReport(reportText: string): AssessmentReport {
       for (const cells of tableRows.slice(0, 10)) {
         const fullText = cells.join(' ').toLowerCase();
         let action = 'Assess';
-        if (/\bremove\b|\breplace\b|\bdiscard\b/.test(fullText)) action = 'Remove';
+        if (/\bno.?action\b|\bretain\b|\baccept\b/.test(fullText)) action = 'No Action';
+        else if (/\bremove\b|\breplace\b|\bdiscard\b/.test(fullText)) action = 'Remove';
         else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(fullText)) action = 'Clean';
-        else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(fullText)) action = 'No Action';
 
         sections.restorationPriority.push({
           priority: priority++,
@@ -270,9 +270,9 @@ function parseReport(reportText: string): AssessmentReport {
       for (const bullet of bullets.slice(0, 10)) {
         let action = 'Assess';
         const lowerBullet = bullet.toLowerCase();
-        if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) action = 'Remove';
+        if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) action = 'No Action';
+        else if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) action = 'Remove';
         else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(lowerBullet)) action = 'Clean';
-        else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) action = 'No Action';
 
         sections.restorationPriority.push({
           priority: priority++,
@@ -475,6 +475,15 @@ describe('parseReport()', () => {
 
       expect(result.restorationPriority[0].action).toBe('Assess');
     });
+
+    it('should prioritize No Action over Clean when both keywords present in text', () => {
+      const testOutput = `## 4. Disposition
+- Tile Flooring: No action required, confirmed clean by wipe test`;
+
+      const result = parseReport(testOutput);
+
+      expect(result.restorationPriority[0].action).toBe('No Action');
+    });
   });
 });
 
@@ -647,9 +656,9 @@ function extractZoneAndSeverity(reportText: string) {
   }
 
   let overallSeverity: 'heavy' | 'moderate' | 'light' | 'trace' | 'none' = 'moderate';
-  if (/\b(heavy|severe)\s*(damage|contamination)\b/i.test(execSummary)) {
+  if (/\b(heavy|severe)\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'heavy';
-  } else if (/\blight\s*(smoke\s*)?damage\b/i.test(execSummary)) {
+  } else if (/\blight\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'light';
   } else if (/\btrace\b/i.test(execSummary)) {
     overallSeverity = 'trace';
@@ -775,6 +784,31 @@ Some additional text about the assessment.`;
 
     const result = extractZoneAndSeverity(report);
     expect(result.zoneClassification).toBe('near-field');
+  });
+
+  it('should extract heavy severity from "severe fire and smoke damage" (words between severe and damage)', () => {
+    const report = `## 1. Executive Summary
+
+This kitchen sustained a fire originating at the stove area, resulting in severe fire and smoke damage concentrated in the center of the room.
+
+## 2. Zone Classification
+Burn zone.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.overallSeverity).toBe('heavy');
+  });
+
+  it('should extract light severity from "Light Contamination" (contamination not just damage)', () => {
+    const report = `## 1. Executive Summary
+
+**Severity:** Light Contamination (Localized)
+**Zone Classification:** Far-Field Zone
+
+## 2. Zone Classification
+Far-field.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.overallSeverity).toBe('light');
   });
 });
 

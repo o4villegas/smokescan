@@ -468,8 +468,8 @@ export async function handleAssessResult(c: Context<{ Bindings: WorkerEnv }>) {
     try {
       const db = new DatabaseService(c.env.SMOKESCAN_DB);
 
-      // Save full report JSON to reports table
-      await db.createReport(jobState.assessmentId, 'assessment', JSON.stringify(report));
+      // Save full report JSON and raw markdown to reports table
+      await db.createReport(jobState.assessmentId, 'assessment', JSON.stringify(report), undefined, resultResponse.data);
 
       // Link images to assessment in D1
       for (let i = 0; i < jobState.imageR2Keys.length; i++) {
@@ -568,10 +568,12 @@ function extractVisionSummary(reportText: string): VisionAnalysisOutput {
   }
 
   // Extract severity from executive summary only
+  // Allow up to 30 chars between severity keyword and damage/contamination
+  // to handle phrases like "severe fire and smoke damage" or "Light Contamination"
   let overallSeverity: 'heavy' | 'moderate' | 'light' | 'trace' | 'none' = 'moderate';
-  if (/\b(heavy|severe)\s*(damage|contamination)\b/i.test(execSummary)) {
+  if (/\b(heavy|severe)\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'heavy';
-  } else if (/\blight\s*(smoke\s*)?damage\b/i.test(execSummary)) {
+  } else if (/\blight\b[\w\s,]{0,30}(damage|contamination)\b/i.test(execSummary)) {
     overallSeverity = 'light';
   } else if (/\btrace\b/i.test(execSummary)) {
     overallSeverity = 'trace';
@@ -628,9 +630,12 @@ function parseReport(reportText: string): AssessmentReport {
   }
 
   // Helper to extract severity from text
+  // Uses broadened patterns consistent with extractVisionSummary() severity extraction
   function extractSeverity(text: string): 'heavy' | 'moderate' | 'light' | 'trace' | 'none' {
     const lowerText = text.toLowerCase();
+    if (/\b(heavy|severe|significant)\b[\w\s,]{0,30}(damage|contamination)\b/.test(lowerText)) return 'heavy';
     if (/\b(heavy|severe|significant)\b/.test(lowerText)) return 'heavy';
+    if (/\blight\b[\w\s,]{0,30}(damage|contamination)\b/.test(lowerText)) return 'light';
     if (/\bmoderate\b/.test(lowerText)) return 'moderate';
     if (/\blight\b/.test(lowerText)) return 'light';
     if (/\btrace\b/.test(lowerText)) return 'trace';
@@ -747,7 +752,7 @@ function parseReport(reportText: string): AssessmentReport {
       // Table format: first cell = surface, remaining cells = method/rationale
       let priority = 1;
       // Vague area names that indicate parsed table headers, not real data
-      const vagueAreaPattern = /^(surface|material|area|item|component)$/i;
+      const vagueAreaPattern = /^(surface|material|area|item|component|location|zone)$/i;
       const headerRationalePattern = /^(condition|disposition|rationale|recommendation|reason)/i;
 
       for (const cells of tableRows.slice(0, 10)) {
@@ -761,9 +766,10 @@ function parseReport(reportText: string): AssessmentReport {
 
         const fullText = cells.join(' ').toLowerCase();
         let action = 'Assess';
-        if (/\bremove\b|\breplace\b|\bdiscard\b/.test(fullText)) action = 'Remove';
+        // Check "No Action" first — most explicit/intentional phrase takes priority
+        if (/\bno.?action\b|\bretain\b|\baccept\b/.test(fullText)) action = 'No Action';
+        else if (/\bremove\b|\breplace\b|\bdiscard\b/.test(fullText)) action = 'Remove';
         else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(fullText)) action = 'Clean';
-        else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(fullText)) action = 'No Action';
 
         sections.restorationPriority.push({
           priority: priority++,
@@ -779,9 +785,9 @@ function parseReport(reportText: string): AssessmentReport {
       for (const bullet of bullets.slice(0, 10)) {
         let action = 'Assess';
         const lowerBullet = bullet.toLowerCase();
-        if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) action = 'Remove';
+        if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) action = 'No Action';
+        else if (/\bremove\b|\breplace\b|\bdiscard\b/.test(lowerBullet)) action = 'Remove';
         else if (/\bclean\b|\bwipe\b|\bhepa\b|\bvacuum\b/.test(lowerBullet)) action = 'Clean';
-        else if (/\bno.?action\b|\bretain\b|\baccept\b/.test(lowerBullet)) action = 'No Action';
 
         sections.restorationPriority.push({
           priority: priority++,
