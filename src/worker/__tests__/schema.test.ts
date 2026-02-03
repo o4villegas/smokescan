@@ -199,6 +199,7 @@ describe('AssessmentMetadataSchema', () => {
         },
         fireOrigin: 'Adjacent warehouse, northwest corner',
         notes: 'HVAC system was running during fire. Visible soot in ductwork.',
+        isFireOrigin: true,
       };
 
       const result = AssessmentMetadataSchema.safeParse(completeInput);
@@ -209,6 +210,38 @@ describe('AssessmentMetadataSchema', () => {
         expect(result.data.dimensions.width_ft).toBe(30);
         expect(result.data.dimensions.height_ft).toBe(12);
         expect(result.data.sensory_observations?.smoke_odor_intensity).toBe('strong');
+        expect(result.data.isFireOrigin).toBe(true);
+      }
+    });
+  });
+
+  describe('isFireOrigin (optional boolean)', () => {
+    it('should accept isFireOrigin as true', () => {
+      const input = {
+        roomType: 'residential-kitchen',
+        structureType: 'single-family',
+        dimensions: { length_ft: 12, width_ft: 10, height_ft: 9 },
+        isFireOrigin: true,
+      };
+
+      const result = AssessmentMetadataSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.isFireOrigin).toBe(true);
+      }
+    });
+
+    it('should accept missing isFireOrigin (defaults to undefined)', () => {
+      const input = {
+        roomType: 'residential-bedroom',
+        structureType: 'single-family',
+        dimensions: { length_ft: 14, width_ft: 12, height_ft: 8 },
+      };
+
+      const result = AssessmentMetadataSchema.safeParse(input);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.isFireOrigin).toBeUndefined();
       }
     });
   });

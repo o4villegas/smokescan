@@ -622,6 +622,162 @@ describe('API Response Structure', () => {
   });
 });
 
+/**
+ * Recreate extractVisionSummary zone/severity extraction for testing.
+ * Mirrors the implementation in assess.ts extractVisionSummary().
+ */
+function extractZoneAndSeverity(reportText: string) {
+  const execSummaryMatch = reportText.match(
+    /##\s*(?:\d+\.?\s*)?Executive\s+Summary[^\n]*\n+([\s\S]*?)(?=\n##\s|$)/i
+  );
+  const execSummary = execSummaryMatch?.[1] || reportText.slice(0, 1500);
+
+  let zoneClassification: 'burn' | 'near-field' | 'far-field' = 'far-field';
+  const zoneStatement = execSummary.match(
+    /zone\s*(?:classification)?[:\s]*\*{0,2}\s*(burn|near[-\s]?field|far[-\s]?field|background)/i
+  );
+  if (zoneStatement) {
+    const zone = zoneStatement[1].toLowerCase().replace(/\s+/g, '-');
+    if (zone === 'burn') zoneClassification = 'burn';
+    else if (zone.startsWith('near')) zoneClassification = 'near-field';
+    else zoneClassification = 'far-field';
+  } else {
+    if (/\bburn\s*zone\b/i.test(execSummary)) zoneClassification = 'burn';
+    else if (/\bnear[-\s]?field\b/i.test(execSummary)) zoneClassification = 'near-field';
+  }
+
+  let overallSeverity: 'heavy' | 'moderate' | 'light' | 'trace' | 'none' = 'moderate';
+  if (/\b(heavy|severe)\s*(damage|contamination)\b/i.test(execSummary)) {
+    overallSeverity = 'heavy';
+  } else if (/\blight\s*(smoke\s*)?damage\b/i.test(execSummary)) {
+    overallSeverity = 'light';
+  } else if (/\btrace\b/i.test(execSummary)) {
+    overallSeverity = 'trace';
+  }
+
+  return { zoneClassification, overallSeverity, execSummary };
+}
+
+describe('extractZoneAndSeverity (zone extraction from executive summary)', () => {
+  it('should extract near-field from executive summary, not burn from FDAM tables in report body', () => {
+    // This is the exact bug that caused 4/5 rooms to show as "burn" in production.
+    // The FDAM definition tables in the report body contain "Burn Zone" text.
+    const report = `## 1. Executive Summary
+
+This room exhibits **light to moderate smoke exposure**. Based on field observations, the entire room falls within **Near-Field Zone**.
+
+**Zone Classification:** Near-Field
+
+## 2. Zone Classification
+
+Per FDAM v4.0.1 methodology:
+- **Burn Zone**: Direct fire involvement, charring present
+- **Near-Field**: Adjacent to burn zone, heavy smoke/heat exposure
+- **Far-Field**: Smoke migration without direct heat exposure
+
+This room is classified as Near-Field.
+
+## 3. Surface Assessment
+Moderate soot on ceiling.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.zoneClassification).toBe('near-field');
+  });
+
+  it('should extract far-field from executive summary when report body mentions burn zone', () => {
+    const report = `## 1. Executive Summary
+
+**Zone Classification:** Far-Field Zone
+**Severity Level:** Light Smoke Damage
+
+## 2. Zone Classification
+
+Per FDAM methodology, zones are defined as:
+- Burn Zone: Direct flame contact
+- Near-Field: Adjacent smoke/heat
+- Far-Field: Smoke migration only
+
+This room is Far-Field.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.zoneClassification).toBe('far-field');
+  });
+
+  it('should extract burn zone when executive summary explicitly states burn', () => {
+    const report = `## 1. Executive Summary
+
+This kitchen has experienced a severe fire event. The entire room qualifies as **Burn Zone** with heavy damage.
+
+**Zone Classification:** Burn
+**Severity Level:** Heavy Damage
+
+## 2. Zone Classification
+Burn zone confirmed.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.zoneClassification).toBe('burn');
+  });
+
+  it('should map background zone to far-field', () => {
+    const report = `## 1. Executive Summary
+
+**Zone Classification:** Background
+No visible soot or damage. Faint smoke odor only.
+
+## 2. Zone Classification
+Background zone.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.zoneClassification).toBe('far-field');
+  });
+
+  it('should default to far-field when no zone mentioned in executive summary', () => {
+    const report = `## 1. Executive Summary
+
+Minor smoke odor detected. No visible contamination.
+
+## 2. Zone Classification
+Assessment pending.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.zoneClassification).toBe('far-field');
+  });
+
+  it('should extract light severity from "Light Smoke Damage"', () => {
+    const report = `## 1. Executive Summary
+
+**Severity Level:** Light Smoke Damage
+**Zone Classification:** Far-Field
+
+## 2. Zone Classification
+Far-field.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.overallSeverity).toBe('light');
+  });
+
+  it('should extract heavy severity from "severe damage"', () => {
+    const report = `## 1. Executive Summary
+
+This room shows severe damage from direct fire contact.
+
+## 2. Zone Classification
+Burn zone.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.overallSeverity).toBe('heavy');
+  });
+
+  it('should fall back to first 1500 chars when no executive summary header exists', () => {
+    const report = `This room is classified as Near-Field Zone based on smoke patterns.
+
+Some additional text about the assessment.`;
+
+    const result = extractZoneAndSeverity(report);
+    expect(result.zoneClassification).toBe('near-field');
+  });
+});
+
 describe('Chat Response Structure', () => {
   it('should verify chat response matches ChatResponse type', () => {
     // This test documents the expected chat response structure

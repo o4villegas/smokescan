@@ -68,6 +68,7 @@ export const AssessmentMetadataSchema = z.object({
   dimensions: RoomDimensionsSchema, // MANDATORY per FDAM methodology
   sensory_observations: SensoryObservationsSchema.optional(),
   fireOrigin: z.string().optional(),
+  isFireOrigin: z.boolean().optional(),
   notes: z.string().max(2000).optional(),
 });
 
